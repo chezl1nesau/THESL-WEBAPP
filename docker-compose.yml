@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  hr-portal:
+    build: .
+    container_name: hr-portal
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      # Map the uploads directory to persist uploaded files
+      - ./server/uploads:/app/server/uploads
+      # Map the SQLite database file to persist data
+      - ./server/database.sqlite:/app/server/database.sqlite
+    restart: unless-stopped
