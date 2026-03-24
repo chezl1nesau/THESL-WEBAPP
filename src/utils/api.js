@@ -10,12 +10,15 @@ const onRefreshed = (token) => {
     refreshSubscribers = [];
 };
 
+// Get API base URL from environment or use relative paths
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
 // Retry logic helper with exponential backoff
-const fetchWithRetry = async (url, options, maxRetries = 3) => {
+const fetchWithRetry = async (fullUrl, options, maxRetries = 3) => {
     let lastError;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
-            return await fetch(url, options);
+            return await fetch(fullUrl, options);
         } catch (error) {
             lastError = error;
             if (attempt < maxRetries - 1) {
@@ -41,9 +44,11 @@ export const apiFetch = async (url, options = {}, token = null) => {
         headers['Authorization'] = `Bearer ${currentToken}`;
     }
 
+    const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+
     let response;
     try {
-        response = await fetchWithRetry(url, {
+        response = await fetchWithRetry(fullUrl, {
             ...options,
             headers,
             credentials: 'include'
@@ -64,7 +69,8 @@ export const apiFetch = async (url, options = {}, token = null) => {
 
         isRefreshing = true;
         try {
-            const refreshResponse = await fetchWithRetry('/api/auth/refresh', {
+            const refreshUrl = `${API_BASE_URL}/api/auth/refresh`;
+            const refreshResponse = await fetchWithRetry(refreshUrl, {
                 method: 'POST',
                 credentials: 'include'
             }, 3);

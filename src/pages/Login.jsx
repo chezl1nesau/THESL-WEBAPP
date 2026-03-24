@@ -14,8 +14,11 @@ export default function Login({ onLogin }) {
         setIsLoading(true);
         setError('');
 
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
         try {
             const endpoint = mfaRequired ? '/api/auth/2fa/login' : '/api/auth/login';
+            const fullUrl = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
             const body = mfaRequired 
                 ? JSON.stringify({ email, code: mfaCode })
                 : JSON.stringify({ email, password });
@@ -24,7 +27,7 @@ export default function Login({ onLogin }) {
             let lastError = null;
             for (let attempt = 0; attempt < 3; attempt++) {
                 try {
-                    const res = await fetch(endpoint, {
+                    const res = await fetch(fullUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body

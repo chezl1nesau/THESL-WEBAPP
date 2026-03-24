@@ -1,183 +1,149 @@
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
-import path from 'path';
+import { createClient } from '@supabase/supabase-js';
 import process from 'node:process';
 import bcrypt from 'bcryptjs';
 
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+    throw new Error('Missing Supabase credentials: SUPABASE_URL and SUPABASE_KEY');
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
 export async function setupDb() {
-    const db = await open({
-        filename: path.join(process.cwd(), 'server', 'database.sqlite'),
-        driver: sqlite3.Database
-    });
-
-    await db.exec(`
-        CREATE TABLE IF NOT EXISTS users (
-            email TEXT PRIMARY KEY,
-            password TEXT,
-            role TEXT,
-            name TEXT,
-            annual_balance INTEGER DEFAULT 12,
-            sick_balance INTEGER DEFAULT 8,
-            annual_used INTEGER DEFAULT 0,
-            sick_used INTEGER DEFAULT 0,
-            avatar TEXT,
-            phone TEXT
-        );
-        CREATE TABLE IF NOT EXISTS announcements (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            type TEXT,
-            title TEXT,
-            content TEXT,
-            date TEXT,
-            author TEXT,
-            pinned INTEGER
-        );
-        CREATE TABLE IF NOT EXISTS requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            type TEXT,
-            status TEXT,
-            date TEXT
-        );
-        CREATE TABLE IF NOT EXISTS annual_leave (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_email TEXT,
-            startDate TEXT,
-            endDate TEXT,
-            duration INTEGER,
-            reason TEXT,
-            status TEXT,
-            submitDate TEXT
-        );
-        CREATE TABLE IF NOT EXISTS sick_leave (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_email TEXT,
-            type TEXT,
-            duration INTEGER,
-            fileName TEXT,
-            status TEXT,
-            date TEXT
-        );
-        CREATE TABLE IF NOT EXISTS lateness (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            time TEXT,
-            date TEXT,
-            lateness INTEGER,
-            status TEXT
-        );
-        CREATE TABLE IF NOT EXISTS pending_approvals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            reference_id INTEGER,
-            user_email TEXT,
-            name TEXT,
-            type TEXT,
-            duration INTEGER,
-            details TEXT,
-            date TEXT
-        );
-        CREATE TABLE IF NOT EXISTS audit_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            email TEXT,
-            action TEXT,
-            details TEXT
-        );
-        CREATE TABLE IF NOT EXISTS performance_reviews (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_email TEXT,
-            manager_email TEXT,
-            period TEXT,
-            self_assessment TEXT,
-            manager_feedback TEXT,
-            rating INTEGER,
-            status TEXT,
-            date TEXT
-        );
-        CREATE TABLE IF NOT EXISTS documents (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            filename TEXT,
-            size INTEGER,
-            date TEXT
-        );
-    `);
-
     try {
-        await db.exec('ALTER TABLE users ADD COLUMN two_factor_secret TEXT;');
-    } catch {
-        // Column may already exist.
-    }
-    try {
-        await db.exec('ALTER TABLE users ADD COLUMN two_factor_enabled INTEGER DEFAULT 0;');
-    } catch {
-        // Column may already exist.
-    }
-    try {
-        await db.exec('ALTER TABLE users ADD COLUMN reset_token TEXT;');
-    } catch {
-        // Column may already exist.
-    }
-    try {
-        await db.exec('ALTER TABLE users ADD COLUMN reset_token_expires DATETIME;');
-    } catch {
-        // Column may already exist.
-    }
-    try {
-        await db.exec('ALTER TABLE users ADD COLUMN reset_token_hash TEXT;');
-    } catch {
-        // Column may already exist.
-    }
-
-    const userCount = await db.get('SELECT COUNT(*) as count FROM users');
-    if (userCount.count === 0) {
-        // Admin users
-        const adminPassword = await bcrypt.hash('admin123', 10);
-        await db.run('INSERT INTO users (email, password, role, name, annual_balance, sick_balance, annual_used, sick_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', ['admin@thesl.co.za', adminPassword, 'admin', 'Admin User', 15, 10, 0, 0]);
-        await db.run('INSERT INTO users (email, password, role, name, annual_balance, sick_balance, annual_used, sick_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', ['chezlin@thesl.co.za', adminPassword, 'admin', 'Chezlin', 15, 10, 0, 0]);
-
-        const employees = [
-            ['aakifah.sims@thesl.co.za', 'Aakifah Sims'],
-            ['ali+user@thesl.co.za', 'Ali Rhoda'],
-            ['angelique@thesl.co.za', 'Angelique Pelser'],
-            ['aqeel@thesl.co.za', 'Aqeel Bomester'],
-            ['bevan@thesl.co.za', 'Bevan Marthinus'],
-            ['cameron@thesl.co.za', 'Cameron Cicero'],
-            ['chante@thesl.co.za', 'Chante Davidse'],
-            ['darryn@thesl.co.za', 'Darryn Roman'],
-            ['keisha@thesl.co.za', 'Keisha October'],
-            ['lauren@thesl.co.za', 'Lauren Williams', 'employee'],
-            ['leeroy@thesl.co.za', 'Lee-Roy van Wyk', 'manager'],
-            ['lyal@thesl.co.za', 'Lyal Siebritz', 'employee'],
-            ['mikayla@thesl.co.za', 'Mikayla Titus'],
-            ['nadine@claimscard.co.za', 'Nadine Morris'],
-            ['nikitadw@thesl.co.za', 'Nikita De Wee'],
-            ['rasool@thesl.co.za', 'Rasool Thomas'],
-            ['roeshen@thesl.co.za', 'Roeshen Petersen'],
-            ['ryan@thesl.co.za', 'Ryan Williams'],
-            ['waidon@thesl.co.za', 'Waidon Cloete'],
-            ['west@thesl.co.za', 'West Ebrahiem'],
-            ['yazied@thesl.co.za', 'Yazied Boltman'],
-            ['zak@thesl.co.za', 'Zak Chotia', 'employee']
-        ];
-
-        const empPassword = await bcrypt.hash('password123', 10);
-        for (const emp of employees) {
-            await db.run(
-                'INSERT INTO users (email, password, role, name, annual_balance, sick_balance, annual_used, sick_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
-                [emp[0], empPassword, emp[2] || 'employee', emp[1], 12, 8, 0, 0]
-            );
+        const { error } = await supabase.from('users').select('email').limit(1);
+        if (error && error.code !== 'PGRST116') {
+            throw error;
         }
-        
-        await db.run('INSERT INTO announcements (type, title, content, date, author, pinned) VALUES (?, ?, ?, ?, ?, ?)', ['event', 'Company Year-End Function', 'Join us for our annual year-end celebration on December 15th at 6 PM.', '2026-03-18', 'HR Team', 1]);
-        await db.run('INSERT INTO announcements (type, title, content, date, author, pinned) VALUES (?, ?, ?, ?, ?, ?)', ['policy', 'Updated Remote Work Policy', 'We have updated our remote work policy.', '2026-03-15', 'HR Team', 0]);
-        
-        await db.run('INSERT INTO requests (title, type, status, date) VALUES (?, ?, ?, ?)', ['Monitor Replacement', 'IT Support', 'Open', 'Mar 18, 2026']);
-        await db.run('INSERT INTO requests (title, type, status, date) VALUES (?, ?, ?, ?)', ['Network Access', 'IT Support', 'In Progress', 'Mar 16, 2026']);
-        
-        // Let's seed an actual leave record so we can link it
-        const res = await db.run('INSERT INTO annual_leave (user_email, startDate, endDate, duration, reason, status, submitDate) VALUES (?, ?, ?, ?, ?, ?, ?)', ['employee@thesl.co.za', '2026-04-01', '2026-04-05', 5, 'Vacation', 'Pending', 'Mar 15, 2026']);
-        await db.run('INSERT INTO pending_approvals (reference_id, user_email, name, type, duration, details, date) VALUES (?, ?, ?, ?, ?, ?, ?)', [res.lastID, 'employee@thesl.co.za', 'Sarah Johnson', 'Annual', 5, 'Annual Leave - 5 days', 'Mar 15, 2026']);
+        console.log('✓ Connected to Supabase');
+    } catch (err) {
+        console.error('Supabase check:', err.message);
     }
 
-    return db;
+    return {
+        get: async (query, params = []) => queryToSupabase(query, 'single', params),
+        all: async (query, params = []) => queryToSupabase(query, 'all', params),
+        run: async (query, params = []) => queryToSupabase(query, 'run', params),
+        exec: async (sql) => null
+    };
+}
+
+async function queryToSupabase(query, type, params = []) {
+    try {
+        // INSERT query
+        if (query.toUpperCase().includes('INSERT INTO')) {
+            const tableMatch = query.match(/INSERT INTO\s+(\w+)\s*\(/i);
+            const columnsMatch = query.match(/\((.*?)\)\s*VALUES/i);
+            if (tableMatch && columnsMatch) {
+                const table = tableMatch[1];
+                const columns = columnsMatch[1].split(',').map(c => c.trim());
+                const values = {};
+                columns.forEach((col, i) => {
+                    values[col] = params[i];
+                });
+                const { data, error } = await supabase.from(table).insert([values]).select();
+                if (error) throw error;
+                return data?.[0] || null;
+            }
+        }
+
+        // SELECT with WHERE
+        if (query.toUpperCase().includes('SELECT') && query.toUpperCase().includes('WHERE')) {
+            const tableMatch = query.match(/FROM\s+(\w+)/i);
+            const whereMatch = query.match(/WHERE\s+(.+?)(?:\s+ORDER|\s+LIMIT|$)/i);
+            if (tableMatch && whereMatch) {
+                const table = tableMatch[1];
+                const whereClause = whereMatch[1];
+                
+                let queryBuilder = supabase.from(table).select('*');
+                
+                const conditions = whereClause.split(/\s+AND\s+/i);
+                let paramIndex = 0;
+                for (const condition of conditions) {
+                    const match = condition.match(/(\w+)\s*=\s*\?/i);
+                    if (match) {
+                        queryBuilder = queryBuilder.eq(match[1], params[paramIndex++]);
+                    }
+                }
+                
+                const { data, error } = await queryBuilder;
+                if (error) throw error;
+                
+                if (type === 'single') {
+                    return data?.[0] || null;
+                }
+                return data || [];
+            }
+        }
+
+        // SELECT all
+        if (query.toUpperCase().includes('SELECT')) {
+            const tableMatch = query.match(/FROM\s+(\w+)/i);
+            if (tableMatch) {
+                const table = tableMatch[1];
+                const { data, error } = await supabase.from(table).select('*');
+                if (error) throw error;
+                return type === 'single' ? data?.[0] || null : data || [];
+            }
+        }
+
+        // UPDATE query
+        if (query.toUpperCase().includes('UPDATE')) {
+            const tableMatch = query.match(/UPDATE\s+(\w+)\s+SET/i);
+            const setMatch = query.match(/SET\s+(.+?)\s+WHERE/i);
+            const whereMatch = query.match(/WHERE\s+(.+?)(?:\s+LIMIT|$)/i);
+            
+            if (tableMatch && setMatch && whereMatch) {
+                const table = tableMatch[1];
+                const setClause = setMatch[1];
+                const whereClause = whereMatch[1];
+                
+                const updates = {};
+                const setParts = setClause.split(',');
+                setParts.forEach((part, i) => {
+                    const [field] = part.split('=');
+                    updates[field.trim()] = params[i];
+                });
+                
+                let queryBuilder = supabase.from(table);
+                const whereMatch2 = whereClause.match(/(\w+)\s*=\s*\?/i);
+                if (whereMatch2) {
+                    queryBuilder = queryBuilder.eq(whereMatch2[1], params[setParts.length]);
+                }
+                
+                const { data, error } = await queryBuilder.update(updates).select();
+                if (error) throw error;
+                return data?.[0] || null;
+            }
+        }
+
+        // DELETE query
+        if (query.toUpperCase().includes('DELETE FROM')) {
+            const tableMatch = query.match(/DELETE FROM\s+(\w+)/i);
+            const whereMatch = query.match(/WHERE\s+(.+?)(?:\s+LIMIT|$)/i);
+            
+            if (tableMatch && whereMatch) {
+                const table = tableMatch[1];
+                const whereClause = whereMatch[1];
+                
+                const fieldMatch = whereClause.match(/(\w+)\s*=\s*\?/i);
+                if (fieldMatch) {
+                    const { data, error } = await supabase
+                        .from(table)
+                        .delete()
+                        .eq(fieldMatch[1], params[0]);
+                    if (error) throw error;
+                    return data;
+                }
+            }
+        }
+
+        console.warn('Unsupported query:', query);
+        return type === 'single' ? null : [];
+    } catch (err) {
+        console.error('Query error:', err);
+        return type === 'single' ? null : [];
+    }
 }
