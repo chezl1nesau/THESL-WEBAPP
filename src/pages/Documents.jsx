@@ -1,24 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { api } from '../utils/api';
 
-export default function Documents({ user }) {
+export default function Documents({ user, token }) {
     const [documents, setDocuments] = useState([]);
     const [title, setTitle] = useState('');
     const [file, setFile] = useState(null);
     const [status, setStatus] = useState({ type: '', message: '' });
 
-    useEffect(() => {
-        fetchDocuments();
-    }, []);
-
-    const fetchDocuments = async () => {
+    const fetchDocuments = useCallback(async () => {
         try {
-            const res = await fetch('/api/documents');
+            const res = await api.get('/api/documents', token);
             const data = await res.json();
             setDocuments(data);
-        } catch(err) {
+        } catch (err) {
             console.error(err);
         }
-    };
+    }, [token]);
+
+    useEffect(() => {
+        api.get('/api/documents', token)
+            .then(res => res.json())
+            .then(data => setDocuments(data))
+            .catch(err => console.error(err));
+    }, [token]);
 
     const handleUpload = async (e) => {
         e.preventDefault();
@@ -31,10 +35,7 @@ export default function Documents({ user }) {
         setStatus({ type: 'info', message: 'Uploading...' });
 
         try {
-            const res = await fetch('/api/documents/upload', {
-                method: 'POST',
-                body: formData
-            });
+            const res = await api.upload('/api/documents/upload', formData, token);
 
             if(res.ok) {
                 setStatus({ type: 'success', message: 'Document uploaded successfully!' });

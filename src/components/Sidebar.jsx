@@ -26,68 +26,76 @@ export default function Sidebar({ user, currentPage, onNavigate, onLogout }) {
                 <li className="nav-item">
                     <a href="#" className={`nav-link ${currentPage === 'dashboard' ? 'active' : ''}`}
                        onClick={(e) => { e.preventDefault(); onNavigate('dashboard'); }}>
-                        Dashboard
+                        <span className="icon">📊</span> Dashboard
                     </a>
                 </li>
                 <li className="nav-item">
                     <a href="#" className={`nav-link ${currentPage === 'announcements' ? 'active' : ''}`}
                        onClick={(e) => { e.preventDefault(); onNavigate('announcements'); }}>
-                        Announcements
+                        <span className="icon">📢</span> Announcements
                     </a>
                 </li>
                 <li className="nav-item">
                     <a href="#" className={`nav-link ${currentPage === 'documents' ? 'active' : ''}`}
                        onClick={(e) => { e.preventDefault(); onNavigate('documents'); }}>
-                        Company Documents
+                        <span className="icon">📁</span> Company Documents
                     </a>
                 </li>
                 <li className="nav-item">
                     <a href="#" className={`nav-link ${currentPage === 'calendar' ? 'active' : ''}`}
                        onClick={(e) => { e.preventDefault(); onNavigate('calendar'); }}>
-                        Calendar
+                        <span className="icon">📅</span> Calendar
                     </a>
                 </li>
                 <li className="nav-item">
                     <a href="#" className={`nav-link ${currentPage === 'annual-leave' ? 'active' : ''}`}
                        onClick={(e) => { e.preventDefault(); onNavigate('annual-leave'); }}>
-                        Annual Leave
+                        <span className="icon">🌴</span> Annual Leave
                     </a>
                 </li>
                 <li className="nav-item">
                     <a href="#" className={`nav-link ${currentPage === 'sick-leave' ? 'active' : ''}`}
                        onClick={(e) => { e.preventDefault(); onNavigate('sick-leave'); }}>
-                        Sick Leave
+                        <span className="icon">🤒</span> Sick Leave
                     </a>
                 </li>
                 <li className="nav-item">
                     <a href="#" className={`nav-link ${currentPage === 'lateness' ? 'active' : ''}`}
                        onClick={(e) => { e.preventDefault(); onNavigate('lateness'); }}>
-                        Lateness Tracker
+                        <span className="icon">⏱️</span> Lateness Tracker
                     </a>
                 </li>
                 <li className="nav-item">
                     <a href="#" className={`nav-link ${currentPage === 'requests' ? 'active' : ''}`}
                        onClick={(e) => { e.preventDefault(); onNavigate('requests'); }}>
-                        My Requests
+                        <span className="icon">📜</span> My Requests
                     </a>
                 </li>
                 <li className="nav-item">
                     <a href="#" className={`nav-link ${currentPage === 'performance' ? 'active' : ''}`}
                        onClick={(e) => { e.preventDefault(); onNavigate('performance'); }}>
-                        Performance
+                        <span className="icon">📈</span> Performance
                     </a>
                 </li>
                 <li className="nav-item">
                     <a href="#" className={`nav-link ${currentPage === 'profile' ? 'active' : ''}`}
                        onClick={(e) => { e.preventDefault(); onNavigate('profile'); }}>
-                        My Profile
+                        <span className="icon">👤</span> My Profile
                     </a>
                 </li>
-                {user.role === 'admin' && (
+                {(user.role === 'admin' || user.role === 'manager') && (
                     <li className="nav-item">
                         <a href="#" className={`nav-link ${currentPage === 'admin' ? 'active' : ''}`}
                            onClick={(e) => { e.preventDefault(); onNavigate('admin'); }}>
-                            Admin Panel
+                            <span className="icon">🛡️</span> Management Dashboard
+                        </a>
+                    </li>
+                )}
+                {user.role === 'admin' && (
+                    <li className="nav-item">
+                        <a href="#" className={`nav-link ${currentPage === 'users' ? 'active' : ''}`}
+                           onClick={(e) => { e.preventDefault(); onNavigate('users'); }}>
+                            <span className="icon">👥</span> User Management
                         </a>
                     </li>
                 )}

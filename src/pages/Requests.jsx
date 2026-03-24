@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { api } from '../utils/api';
 
-export default function Requests({ user }) {
+export default function Requests({ token }) {
     const [requests, setRequests] = useState([]);
     const [showForm, setShowForm] = useState(false);
     const [title, setTitle] = useState('');
@@ -8,11 +9,11 @@ export default function Requests({ user }) {
     const [filter, setFilter] = useState('All');
 
     useEffect(() => {
-        fetch('/api/requests')
+        api.get('/api/requests', token)
             .then(res => res.json())
             .then(data => setRequests(data))
             .catch(err => console.error(err));
-    }, []);
+    }, [token]);
 
     const filteredRequests = filter === 'All' 
         ? requests 
@@ -28,11 +29,7 @@ export default function Requests({ user }) {
         };
         
         try {
-            const res = await fetch('/api/requests', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            const res = await api.post('/api/requests', payload, token);
             const newRequest = await res.json();
             setRequests([newRequest, ...requests]);
             setShowForm(false);

@@ -1,30 +1,27 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { api } from '../utils/api';
 
-export default function SickLeave({ user }) {
+export default function SickLeave({ user, token }) {
     const [requests, setRequests] = useState([]);
     const [balances, setBalances] = useState({ sick_balance: 0, sick_used: 0 });
     const [showForm, setShowForm] = useState(false);
     const fileInputRef = useRef(null);
 
     useEffect(() => {
-        fetch('/api/leave/sick')
+        api.get('/api/leave/sick', token)
             .then(res => res.json())
             .then(data => setRequests(data.filter(r => r.user_email === user.email)))
             .catch(err => console.error(err));
             
-        fetch(`/api/user/balances?email=${user.email}`)
+        api.get(`/api/user/balances?email=${user.email}`, token)
             .then(res => res.json())
             .then(data => setBalances(data))
             .catch(err => console.error(err));
-    }, [user.email]);
+    }, [user.email, token]);
 
     const postToApi = async (payload) => {
         try {
-            const res = await fetch('/api/leave/sick', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            const res = await api.post('/api/leave/sick', payload, token);
             const newReq = await res.json();
             setRequests([newReq, ...requests]);
         } catch(err) {

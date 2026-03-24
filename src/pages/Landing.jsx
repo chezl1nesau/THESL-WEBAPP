@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 /* Animated SVG cloud layer */
 function CloudLayer({ style }) {
@@ -57,13 +57,18 @@ function DriftClouds() {
 }
 
 /* Subtle twinkling star particles */
+function pseudoRandom(seed) {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
 function Stars() {
-  const stars = Array.from({ length: 40 }, (_, i) => ({
-    x: Math.random() * 100,
-    y: Math.random() * 55,
-    size: Math.random() * 1.5 + 0.5,
-    delay: Math.random() * 4,
-    dur: Math.random() * 3 + 2,
+  const stars = Array.from({ length: 40 }, (_, index) => ({
+    x: pseudoRandom(index + 1) * 100,
+    y: pseudoRandom(index + 2) * 55,
+    size: pseudoRandom(index + 3) * 1.5 + 0.5,
+    delay: pseudoRandom(index + 4) * 4,
+    dur: pseudoRandom(index + 5) * 3 + 2,
   }));
   return (
     <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
@@ -326,7 +331,7 @@ export default function Landing({ onGoToLogin }) {
             backgroundClip: 'text',
             animation: 'shimmerLine 5s linear infinite',
           }}>
-            Silver Lining
+            THESL
           </span>
           <br />
           in Every Day.

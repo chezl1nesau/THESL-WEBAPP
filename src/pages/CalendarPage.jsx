@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Calendar as BigCalendar, dateFnsLocalizer } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
+
+import { api } from '../utils/api';
 
 const locales = { 'en-US': enUS };
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales });
@@ -21,7 +23,7 @@ const today = new Date();
 const pad = (n) => String(n).padStart(2, '0');
 const toDateValue = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-export default function CalendarPage({ user }) {
+export default function CalendarPage({ user, token }) {
     const [events, setEvents] = useState([]);
     const [showForm, setShowForm] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -33,8 +35,8 @@ export default function CalendarPage({ user }) {
         date: toDateValue(today),
     });
 
-    const loadEvents = () => {
-        fetch('/api/calendar')
+    const loadEvents = useCallback(() => {
+        api.get('/api/calendar', token)
             .then(res => res.json())
             .then(data => {
                 setEvents(data.map(e => ({
@@ -44,9 +46,9 @@ export default function CalendarPage({ user }) {
                 })));
             })
             .catch(err => console.error(err));
-    };
+    }, [token]);
 
-    useEffect(() => { loadEvents(); }, []);
+    useEffect(() => { loadEvents(); }, [loadEvents]);
 
     const handleChange = (e) => setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
 
@@ -54,18 +56,14 @@ export default function CalendarPage({ user }) {
         e.preventDefault();
         setSaving(true);
         try {
-            const res = await fetch('/api/announcements', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: form.type,
-                    title: form.title,
-                    content: form.content,
-                    date: form.date,
-                    author: user.name,
-                    pinned: 0,
-                }),
-            });
+            const res = await api.post('/api/announcements', {
+                type: form.type,
+                title: form.title,
+                content: form.content,
+                date: form.date,
+                author: user.name,
+                pinned: 0,
+            }, token);
             if (res.ok) {
                 setSuccessMsg('Event added to the calendar!');
                 setForm({ title: '', type: 'event', content: '', date: toDateValue(today) });

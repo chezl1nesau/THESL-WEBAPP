@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { api } from '../utils/api';
 
-export default function AnnualLeave({ user }) {
+export default function AnnualLeave({ user, token }) {
     const [requests, setRequests] = useState([]);
     const [balances, setBalances] = useState({ annual_balance: 0, annual_used: 0 });
     const [showForm, setShowForm] = useState(false);
@@ -11,17 +12,17 @@ export default function AnnualLeave({ user }) {
     const [reason, setReason] = useState('');
 
     useEffect(() => {
-        fetch('/api/leave/annual')
+        api.get('/api/leave/annual', token)
             .then(res => res.json())
              // For a real app we'd filter by user.email, but for demo we just show all or filter here
             .then(data => setRequests(data.filter(r => r.user_email === user.email)))
             .catch(err => console.error(err));
             
-        fetch(`/api/user/balances?email=${user.email}`)
+        api.get(`/api/user/balances?email=${user.email}`, token)
             .then(res => res.json())
             .then(data => setBalances(data))
             .catch(err => console.error(err));
-    }, [user.email]);
+    }, [user.email, token]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -42,11 +43,7 @@ export default function AnnualLeave({ user }) {
         };
         
         try {
-            const res = await fetch('/api/leave/annual', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            const res = await api.post('/api/leave/annual', payload, token);
             const newRequest = await res.json();
             setRequests([newRequest, ...requests]);
             setShowForm(false);

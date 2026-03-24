@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { api } from '../utils/api';
 import { DEMO_ANNOUNCEMENTS } from '../data/mockData';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
+import { 
+    LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
+    Tooltip, ResponsiveContainer, AreaChart, Area, Cell, PieChart, Pie
+} from 'recharts';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
 const locales = {
@@ -17,26 +22,46 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
-function CompanyCalendar() {
+const LEAVE_DATA = [
+    { name: 'Jan', leave: 1 },
+    { name: 'Feb', leave: 0 },
+    { name: 'Mar', leave: 3 },
+    { name: 'Apr', leave: 2 },
+    { name: 'May', leave: 0 },
+    { name: 'Jun', leave: 4 },
+];
+
+const ATTENDANCE_DATA = [
+    { name: 'Present', value: 38, color: '#bff368' },
+    { name: 'On Leave', value: 3, color: '#3b82f6' },
+    { name: 'Sick', value: 1, color: '#ef4444' },
+];
+
+function CompanyCalendar({ token }) {
     const [events, setEvents] = useState([]);
 
     useEffect(() => {
-        fetch('/api/calendar')
+        api.get('/api/calendar', token)
             .then(res => res.json())
             .then(data => {
-                const formatted = data.map(e => ({
-                    ...e,
-                    start: new Date(e.start),
-                    end: new Date(e.end)
-                }));
-                setEvents(formatted);
+                if (Array.isArray(data)) {
+                    const formatted = data.map(e => ({
+                        ...e,
+                        start: new Date(e.start),
+                        end: new Date(e.end)
+                    }));
+                    setEvents(formatted);
+                } else {
+                    console.warn('Calendar data is not an array:', data);
+                    setEvents([]);
+                }
             })
             .catch(err => console.error(err));
-    }, []);
+    }, [token]);
 
     return (
         <div className="card" style={{ marginBottom: '1.5rem', marginTop: '1.5rem' }}>
-            <h3 className="card-title" style={{ marginBottom: '1rem' }}>Company Event Calendar</h3>
+            <h3 className="card-title" style={{ marginBottom: '1.5rem' }}>Company Event Calendar</h3>
             <div style={{ height: '450px' }}>
                 <Calendar
                     localizer={localizer}
@@ -46,18 +71,18 @@ function CompanyCalendar() {
                     style={{ height: '100%' }}
                     views={['month', 'week', 'agenda']}
                     eventPropGetter={(event) => {
-                        let bg = '#def7ec'; // default for events
-                        let color = '#03543f';
+                        let bg = 'rgba(191, 243, 104, 0.1)'; 
+                        let color = '#bff368';
                         
                         if (event.type === 'leave') {
-                            bg = '#e1effe';
-                            color = '#1e429f';
+                            bg = 'rgba(59, 130, 246, 0.1)';
+                            color = '#60a5fa';
                         } else if (event.type === 'sick') {
-                            bg = '#fde8e8';
-                            color = '#9b1c1c';
+                            bg = 'rgba(239, 68, 68, 0.1)';
+                            color = '#f87171';
                         }
                         
-                        return { style: { backgroundColor: bg, color: color, border: 'none', fontWeight: '500', padding: '2px 5px', borderRadius: '4px' } };
+                        return { style: { backgroundColor: bg, color: color, border: `1px solid ${color}33`, fontWeight: '600', padding: '2px 5px', borderRadius: '4px' } };
                     }}
                 />
             </div>
@@ -99,6 +124,32 @@ function EmployeeDashboard({ user }) {
             <div className="grid-2">
                 <div className="card">
                     <div className="card-header">
+                        <h3 className="card-title">Leave History</h3>
+                    </div>
+                    <div style={{ height: '240px', width: '100%' }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={LEAVE_DATA}>
+                                <defs>
+                                    <linearGradient id="colorLeave" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#bff368" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#bff368" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                                <XAxis dataKey="name" stroke="rgba(255,255,255,0.3)" fontSize={12} tickLine={false} axisLine={false} />
+                                <YAxis stroke="rgba(255,255,255,0.3)" fontSize={12} tickLine={false} axisLine={false} />
+                                <Tooltip 
+                                    contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
+                                    itemStyle={{ color: '#bff368' }}
+                                />
+                                <Area type="monotone" dataKey="leave" stroke="#bff368" strokeWidth={3} fillOpacity={1} fill="url(#colorLeave)" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                <div className="card">
+                    <div className="card-header">
                         <h3 className="card-title">Recent Activity</h3>
                     </div>
                     <table>
@@ -128,47 +179,31 @@ function EmployeeDashboard({ user }) {
                         </tbody>
                     </table>
                 </div>
-
-                <div className="card">
-                    <div className="card-header">
-                        <h3 className="card-title">Latest Announcements</h3>
-                    </div>
-                    {DEMO_ANNOUNCEMENTS.map(announcement => (
-                        <div key={announcement.id} style={{marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-light)'}}>
-                            <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem'}}>
-                                <strong>{announcement.title}</strong>
-                                <span className={`badge badge-${announcement.type === 'event' ? 'primary' : 'warning'}`}>
-                                    {announcement.type}
-                                </span>
-                            </div>
-                            <p style={{fontSize: '0.875rem', color: 'var(--text-secondary)'}}>
-                                {announcement.content.substring(0, 100)}...
-                            </p>
-                        </div>
-                    ))}
-                </div>
             </div>
         </>
     );
 }
 
-export function ManagementDashboard() {
+export function ManagementDashboard({ token }) {
     const [pending, setPending] = useState([]);
 
     useEffect(() => {
-        fetch('/api/admin/pending')
+        api.get('/api/admin/pending', token)
             .then(res => res.json())
-            .then(data => setPending(data))
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setPending(data);
+                } else {
+                    console.warn('Pending approvals data is not an array:', data);
+                    setPending([]);
+                }
+            })
             .catch(err => console.error(err));
-    }, []);
+    }, [token]);
 
     const handleAction = async (id, action) => {
         try {
-            const res = await fetch('/api/admin/action', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, action })
-            });
+            const res = await api.post('/api/admin/action', { id, action }, token);
             const data = await res.json();
             if (data.success) {
                 setPending(data.pendingApprovals);
@@ -181,7 +216,7 @@ export function ManagementDashboard() {
     return (
         <>
             <div className="page-header">
-                <h1>Admin Panel</h1>
+                <h1>Management Dashboard</h1>
                 <p>Manage employees and approvals</p>
             </div>
 
@@ -208,49 +243,85 @@ export function ManagementDashboard() {
                 </div>
             </div>
 
-            <div className="card">
-                <div className="card-header">
-                    <h3 className="card-title">Pending Approvals</h3>
-                </div>
-                {pending.length === 0 ? (
-                    <div className="empty-state">No pending approvals at this time.</div>
-                ) : (
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Employee</th>
-                                <th>Type</th>
-                                <th>Details</th>
-                                <th>Date</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {pending.map(item => (
-                                <tr key={item.id}>
-                                    <td>{item.name}</td>
-                                    <td><span className="badge badge-primary">{item.type}</span></td>
-                                    <td>{item.details}</td>
-                                    <td>{item.date}</td>
-                                    <td>
-                                        <button className="btn btn-success" style={{marginRight: '0.5rem'}} onClick={() => handleAction(item.id, 'Approve')}>Approve</button>
-                                        <button className="btn btn-danger" onClick={() => handleAction(item.id, 'Reject')}>Reject</button>
-                                    </td>
-                                </tr>
+            <div className="grid-2">
+                <div className="card">
+                    <div className="card-header">
+                        <h3 className="card-title">Attendance Overview</h3>
+                    </div>
+                    <div style={{ height: '240px', width: '100%', display: 'flex', alignItems: 'center' }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={ATTENDANCE_DATA}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={60}
+                                    outerRadius={80}
+                                    paddingAngle={5}
+                                    dataKey="value"
+                                >
+                                    {ATTENDANCE_DATA.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                    ))}
+                                </Pie>
+                                <Tooltip 
+                                    contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
+                                />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <div style={{ marginLeft: '1rem' }}>
+                            {ATTENDANCE_DATA.map(item => (
+                                <div key={item.name} style={{ display: 'flex', alignItems: 'center', marginBottom: '0.5rem', fontSize: '0.8125rem' }}>
+                                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: item.color, marginRight: '0.5rem' }} />
+                                    <span style={{ color: 'var(--text-secondary)' }}>{item.name}: <strong>{item.value}</strong></span>
+                                </div>
                             ))}
-                        </tbody>
-                    </table>
-                )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="card">
+                    <div className="card-header">
+                        <h3 className="card-title">Pending Approvals</h3>
+                    </div>
+                    {pending.length === 0 ? (
+                        <div className="empty-state">No pending approvals at this time.</div>
+                    ) : (
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Employee</th>
+                                    <th>Type</th>
+                                    <th>Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {pending.map(item => (
+                                    <tr key={item.id}>
+                                        <td>{item.name}</td>
+                                        <td><span className="badge badge-primary">{item.type}</span></td>
+                                        <td>{item.date}</td>
+                                        <td>
+                                            <button className="btn btn-success" style={{marginRight: '0.5rem'}} onClick={() => handleAction(item.id, 'Approve')}>Approve</button>
+                                            <button className="btn btn-danger" onClick={() => handleAction(item.id, 'Reject')}>Reject</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
             </div>
         </>
     );
 }
 
-export default function Dashboard({ user }) {
+export default function Dashboard({ user, token }) {
     return (
         <div style={{ paddingBottom: '2rem' }}>
-            {user.role === 'admin' ? <ManagementDashboard /> : <EmployeeDashboard user={user} />}
-            <CompanyCalendar />
+            {user.role === 'admin' || user.role === 'manager' ? <ManagementDashboard token={token} /> : <EmployeeDashboard user={user} />}
+            <CompanyCalendar token={token} />
         </div>
     );
 }

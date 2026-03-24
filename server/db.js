@@ -1,6 +1,8 @@
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import path from 'path';
+import process from 'node:process';
+import bcrypt from 'bcryptjs';
 
 export async function setupDb() {
     const db = await open({
@@ -73,6 +75,13 @@ export async function setupDb() {
             details TEXT,
             date TEXT
         );
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            email TEXT,
+            action TEXT,
+            details TEXT
+        );
         CREATE TABLE IF NOT EXISTS performance_reviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_email TEXT,
@@ -94,18 +103,37 @@ export async function setupDb() {
     `);
 
     try {
-        await db.exec('ALTER TABLE users ADD COLUMN avatar TEXT;');
-    } catch (e) {}
-    
+        await db.exec('ALTER TABLE users ADD COLUMN two_factor_secret TEXT;');
+    } catch {
+        // Column may already exist.
+    }
     try {
-        await db.exec('ALTER TABLE users ADD COLUMN phone TEXT;');
-    } catch (e) {}
+        await db.exec('ALTER TABLE users ADD COLUMN two_factor_enabled INTEGER DEFAULT 0;');
+    } catch {
+        // Column may already exist.
+    }
+    try {
+        await db.exec('ALTER TABLE users ADD COLUMN reset_token TEXT;');
+    } catch {
+        // Column may already exist.
+    }
+    try {
+        await db.exec('ALTER TABLE users ADD COLUMN reset_token_expires DATETIME;');
+    } catch {
+        // Column may already exist.
+    }
+    try {
+        await db.exec('ALTER TABLE users ADD COLUMN reset_token_hash TEXT;');
+    } catch {
+        // Column may already exist.
+    }
 
     const userCount = await db.get('SELECT COUNT(*) as count FROM users');
     if (userCount.count === 0) {
         // Admin users
-        await db.run('INSERT INTO users (email, password, role, name, annual_balance, sick_balance, annual_used, sick_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', ['admin@thesl.co.za', 'admin123', 'admin', 'Admin User', 15, 10, 0, 0]);
-        await db.run('INSERT INTO users (email, password, role, name, annual_balance, sick_balance, annual_used, sick_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', ['chezlin@thesl.co.za', 'way', 'admin', 'Chezlin', 15, 10, 0, 0]);
+        const adminPassword = await bcrypt.hash('admin123', 10);
+        await db.run('INSERT INTO users (email, password, role, name, annual_balance, sick_balance, annual_used, sick_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', ['admin@thesl.co.za', adminPassword, 'admin', 'Admin User', 15, 10, 0, 0]);
+        await db.run('INSERT INTO users (email, password, role, name, annual_balance, sick_balance, annual_used, sick_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', ['chezlin@thesl.co.za', adminPassword, 'admin', 'Chezlin', 15, 10, 0, 0]);
 
         const employees = [
             ['aakifah.sims@thesl.co.za', 'Aakifah Sims'],
@@ -117,9 +145,9 @@ export async function setupDb() {
             ['chante@thesl.co.za', 'Chante Davidse'],
             ['darryn@thesl.co.za', 'Darryn Roman'],
             ['keisha@thesl.co.za', 'Keisha October'],
-            ['lauren@thesl.co.za', 'Lauren Williams'],
-            ['leeroy@thesl.co.za', 'Lee-Roy van Wyk'],
-            ['lyal@thesl.co.za', 'Lyal Siebritz'],
+            ['lauren@thesl.co.za', 'Lauren Williams', 'employee'],
+            ['leeroy@thesl.co.za', 'Lee-Roy van Wyk', 'manager'],
+            ['lyal@thesl.co.za', 'Lyal Siebritz', 'employee'],
             ['mikayla@thesl.co.za', 'Mikayla Titus'],
             ['nadine@claimscard.co.za', 'Nadine Morris'],
             ['nikitadw@thesl.co.za', 'Nikita De Wee'],
@@ -129,13 +157,14 @@ export async function setupDb() {
             ['waidon@thesl.co.za', 'Waidon Cloete'],
             ['west@thesl.co.za', 'West Ebrahiem'],
             ['yazied@thesl.co.za', 'Yazied Boltman'],
-            ['zak@thesl.co.za', 'Zak Chotia']
+            ['zak@thesl.co.za', 'Zak Chotia', 'employee']
         ];
 
+        const empPassword = await bcrypt.hash('password123', 10);
         for (const emp of employees) {
             await db.run(
                 'INSERT INTO users (email, password, role, name, annual_balance, sick_balance, annual_used, sick_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
-                [emp[0], 'password123', 'employee', emp[1], 12, 8, 0, 0]
+                [emp[0], empPassword, emp[2] || 'employee', emp[1], 12, 8, 0, 0]
             );
         }
         

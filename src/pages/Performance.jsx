@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { api } from '../utils/api';
 
-export default function Performance({ user }) {
+export default function Performance({ user, token }) {
     const [reviews, setReviews] = useState([]);
     const [employees, setEmployees] = useState([]);
     // Init state for Admin
@@ -14,10 +15,17 @@ export default function Performance({ user }) {
     const [feedbackText, setFeedbackText] = useState('');
     const [feedbackRating, setFeedbackRating] = useState(5);
 
+    const fetchReviews = useCallback(() => {
+        api.get(`/api/performance?email=${user.email}&role=${user.role}`, token)
+            .then(res => res.json())
+            .then(data => setReviews(data))
+            .catch(err => console.error(err));
+    }, [token, user.email, user.role]);
+
     useEffect(() => {
         fetchReviews();
         if (user.role === 'admin') {
-            fetch('/api/users')
+            api.get('/api/users', token)
                 .then(res => res.json())
                 .then(data => {
                     setEmployees(data);
@@ -25,28 +33,17 @@ export default function Performance({ user }) {
                 })
                 .catch(err => console.error(err));
         }
-    }, [user.email, user.role]);
-
-    const fetchReviews = () => {
-        fetch(`/api/performance?email=${user.email}&role=${user.role}`)
-            .then(res => res.json())
-            .then(data => setReviews(data))
-            .catch(err => console.error(err));
-    };
+    }, [fetchReviews, user.role, token]);
 
     const handleInitReview = async (e) => {
         e.preventDefault();
         try {
-            await fetch('/api/performance/init', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    user_email: initEmail,
-                    manager_email: user.email,
-                    period: initPeriod,
-                    date: new Date().toLocaleDateString('en-US')
-                })
-            });
+            await api.post('/api/performance/init', {
+                user_email: initEmail,
+                manager_email: user.email,
+                period: initPeriod,
+                date: new Date().toLocaleDateString('en-US')
+            }, token);
             setInitPeriod('');
             fetchReviews();
         } catch(err) {
@@ -56,14 +53,10 @@ export default function Performance({ user }) {
 
     const handleEmployeeSubmit = async () => {
         try {
-            await fetch('/api/performance/employee', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    id: activeSelfAssessment.id,
-                    self_assessment: selfAssessmentText
-                })
-            });
+            await api.put('/api/performance/employee', {
+                id: activeSelfAssessment.id,
+                self_assessment: selfAssessmentText
+            }, token);
             setActiveSelfAssessment(null);
             setSelfAssessmentText('');
             fetchReviews();
@@ -74,15 +67,11 @@ export default function Performance({ user }) {
 
     const handleManagerSubmit = async () => {
         try {
-            await fetch('/api/performance/manager', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    id: activeManagerFeedback.id,
-                    manager_feedback: feedbackText,
-                    rating: feedbackRating
-                })
-            });
+            await api.put('/api/performance/manager', {
+                id: activeManagerFeedback.id,
+                manager_feedback: feedbackText,
+                rating: feedbackRating
+            }, token);
             setActiveManagerFeedback(null);
             setFeedbackText('');
             setFeedbackRating(5);

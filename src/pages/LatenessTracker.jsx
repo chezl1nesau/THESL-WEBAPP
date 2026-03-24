@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { api } from '../utils/api';
 
-export default function LatenessTracker({ user }) {
+export default function LatenessTracker({ token }) {
     const [currentTime, setCurrentTime] = useState(new Date());
     const [history, setHistory] = useState([]);
 
@@ -10,11 +11,11 @@ export default function LatenessTracker({ user }) {
     }, []);
 
     useEffect(() => {
-        fetch('/api/lateness')
+        api.get('/api/lateness', token)
             .then(res => res.json())
             .then(data => setHistory(data))
             .catch(err => console.error(err));
-    }, []);
+    }, [token]);
 
     const handleArrival = async () => {
         const standardStart = new Date(currentTime);
@@ -36,11 +37,7 @@ export default function LatenessTracker({ user }) {
         };
 
         try {
-            const res = await fetch('/api/lateness', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            const res = await api.post('/api/lateness', payload, token);
             const newRecord = await res.json();
             setHistory([newRecord, ...history]);
         } catch(err) {

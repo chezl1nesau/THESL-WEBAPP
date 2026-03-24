@@ -1,15 +1,69 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import morgan from 'morgan';
 import bodyParser from 'body-parser';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
+import process from 'node:process';
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { body, validationResult } from 'express-validator';
+import cookieParser from 'cookie-parser';
+import speakeasy from 'speakeasy';
+import qrcode from 'qrcode';
+import nodemailer from 'nodemailer';
 import { setupDb } from './db.js';
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
+const requireEnv = (name) => {
+    const value = process.env[name];
+    if (!value) {
+        throw new Error(`Missing required environment variable: ${name}`);
+    }
+    return value;
+};
 
-app.use(cors());
+const ACCESS_TOKEN_SECRET = requireEnv('JWT_ACCESS_SECRET');
+const REFRESH_TOKEN_SECRET = requireEnv('JWT_REFRESH_SECRET');
+const RESET_TOKEN_SECRET = requireEnv('JWT_RESET_SECRET');
+const corsOrigins = requireEnv('CORS_ORIGINS')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+const frontendBaseUrl = process.env.FRONTEND_URL || corsOrigins[0] || 'http://localhost:5173';
+
+// Security Middleware
+app.use(helmet());
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (corsOrigins.includes(origin)) return callback(null, true);
+        return callback(new Error('CORS origin denied'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+    message: 'Too many requests from this IP, please try again after 15 minutes'
+});
+app.use('/api/', limiter);
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: 'Too many password reset attempts, please try again later'
+});
+app.use(cookieParser());
 app.use(bodyParser.json({ limit: '10mb' }));
 
 const uploadDir = path.join(process.cwd(), 'server', 'uploads');
@@ -18,11 +72,126 @@ if (!fs.existsSync(uploadDir)) {
 }
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadDir),
-    filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname || '').toLowerCase();
+        const safeExt = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg'].includes(ext) ? ext : '';
+        cb(null, `${Date.now()}-${crypto.randomUUID()}${safeExt}`);
+    }
 });
-const upload = multer({ storage });
+const upload = multer({
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowedMimeTypes = new Set([
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'image/png',
+            'image/jpeg'
+        ]);
+        const ext = path.extname(file.originalname || '').toLowerCase();
+        const allowedExtensions = new Set(['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg']);
+        if (!allowedMimeTypes.has(file.mimetype) || !allowedExtensions.has(ext)) {
+            return cb(new Error('Invalid file type'));
+        }
+        return cb(null, true);
+    }
+});
 
 let db;
+const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.SMTP_FROM);
+let mailTransporterPromise = null;
+
+// Authentication Middleware
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) return res.status(401).json({ success: false, message: 'Access denied. No token provided.' });
+
+    jwt.verify(token, ACCESS_TOKEN_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ success: false, message: 'Invalid or expired token.' });
+        req.user = user;
+        next();
+    });
+};
+
+// RBAC Middleware
+const isManager = (req, res, next) => {
+    if (req.user && (req.user.role === 'manager' || req.user.role === 'admin')) {
+        next();
+    } else {
+        res.status(403).json({ success: false, message: 'Forbidden: Manager access required' });
+    }
+};
+
+const isAdmin = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({ success: false, message: 'Forbidden: Admin access required' });
+    }
+};
+
+const logAudit = (email, action, details) => {
+    if (!db) return;
+    db.run('INSERT INTO audit_logs (email, action, details) VALUES (?, ?, ?)', [email, action, details], (err) => {
+        if (err) console.error('Audit log failed', err);
+    });
+};
+
+const getMailTransporter = async () => {
+    if (mailTransporterPromise) return mailTransporterPromise;
+    if (smtpConfigured) {
+        mailTransporterPromise = Promise.resolve(nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: Number(process.env.SMTP_PORT || 587),
+            secure: process.env.SMTP_SECURE === 'true',
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS
+            }
+        }));
+        return mailTransporterPromise;
+    }
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('SMTP is not configured');
+    }
+    mailTransporterPromise = nodemailer.createTestAccount().then(testAccount => nodemailer.createTransport({
+        host: testAccount.smtp.host,
+        port: testAccount.smtp.port,
+        secure: testAccount.smtp.secure,
+        auth: {
+            user: testAccount.user,
+            pass: testAccount.pass
+        }
+    }));
+    return mailTransporterPromise;
+};
+
+const sendResetEmail = async (toEmail, signedReset, expires) => {
+    const resetUrl = `${frontendBaseUrl}/reset-password?token=${encodeURIComponent(signedReset)}`;
+    try {
+        const transporter = await getMailTransporter();
+        const info = await transporter.sendMail({
+            from: process.env.SMTP_FROM || 'dev-no-reply@example.local',
+            to: toEmail,
+            subject: 'Password reset request',
+            text: `A password reset was requested for your account.\n\nReset your password: ${resetUrl}\n\nThis link expires at ${expires.toISOString()}.\nIf you did not request this, ignore this email.`
+        });
+        const previewUrl = nodemailer.getTestMessageUrl(info);
+        if (previewUrl) {
+            console.log(`Password reset email preview URL for ${toEmail}: ${previewUrl}`);
+        }
+    } catch (err) {
+        if (process.env.NODE_ENV !== 'production') {
+            console.warn(`Password reset email fallback active: ${err.message}`);
+            console.log(`[DEV ONLY] Password reset link for ${toEmail}: ${resetUrl}`);
+            return;
+        }
+        throw err;
+    }
+};
 
 setupDb().then(database => {
     db = database;
@@ -33,30 +202,301 @@ setupDb().then(database => {
     console.error('Failed to start database', err);
 });
 
-// 1. Auth Endpoint
-app.post('/api/auth/login', async (req, res) => {
+// Validation error handler middleware
+const validate = (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+    }
+    next();
+};
+
+// 1. Auth Endpoint (Public)
+app.post('/api/auth/login', [
+    body('email').isEmail().withMessage('Invalid email format').normalizeEmail(),
+    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
+    validate
+], async (req, res) => {
     const { email, password } = req.body;
     try {
-        const user = await db.get('SELECT * FROM users WHERE email = ? AND password = ?', [email, password]);
-        if (user) {
-            res.json({ success: true, user });
+        const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
+        if (user && await bcrypt.compare(password, user.password)) {
+            const token = jwt.sign(
+                { email: user.email, role: user.role, name: user.name },
+                ACCESS_TOKEN_SECRET,
+                { expiresIn: '15m' }
+            );
+
+            const refreshToken = jwt.sign(
+                { email: user.email },
+                REFRESH_TOKEN_SECRET,
+                { expiresIn: '7d' }
+            );
+
+            res.cookie('refreshToken', refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+                maxAge: 7 * 24 * 60 * 60 * 1000
+            });
+
+            if (user.two_factor_enabled) {
+                return res.json({
+                    success: true,
+                    mfaRequired: true,
+                    email: user.email
+                });
+            }
+
+            logAudit(user.email, 'LOGIN_SUCCESS', `User logged in from ${req.ip}`);
+
+            res.json({
+                success: true,
+                user: { email: user.email, name: user.name, role: user.role, avatar: user.avatar },
+                token
+            });
         } else {
+            logAudit(email, 'LOGIN_FAILURE', `Invalid credentials from ${req.ip}`);
             res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
     } catch (err) {
-        res.status(500).json({ success: false, message: 'Database error' });
+        logAudit(req.body.email || 'unknown', 'LOGIN_FAILURE', `Error: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 });
 
+// 1.1 MFA Verification Login
+app.post('/api/auth/2fa/login', [
+    body('email').isEmail().normalizeEmail(),
+    body('code').isLength({ min: 6, max: 6 }),
+    validate
+], async (req, res) => {
+    const { email, code } = req.body;
+    try {
+        const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
+        if (!user || !user.two_factor_secret) {
+            return res.status(401).json({ success: false, message: 'MFA not setup' });
+        }
+
+        const verified = speakeasy.totp.verify({
+            secret: user.two_factor_secret,
+            encoding: 'base32',
+            token: code
+        });
+
+        if (verified) {
+            const token = jwt.sign(
+                { email: user.email, role: user.role, name: user.name },
+                ACCESS_TOKEN_SECRET,
+                { expiresIn: '15m' }
+            );
+
+            logAudit(user.email, 'LOGIN_SUCCESS_MFA', `User logged in with MFA from ${req.ip}`);
+
+            res.json({
+                success: true,
+                user: { email: user.email, name: user.name, role: user.role, avatar: user.avatar },
+                token
+            });
+        } else {
+            logAudit(user.email, 'LOGIN_FAILURE_MFA', `Invalid MFA code from ${req.ip}`);
+            res.status(401).json({ success: false, message: 'Invalid MFA code' });
+        }
+    } catch {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// 1.2 MFA Setup & Verification
+app.post('/api/auth/2fa/setup', authenticateToken, async (req, res) => {
+    try {
+        const secret = speakeasy.generateSecret({
+            name: `THESL-HR:${req.user.email}`
+        });
+
+        const qrCodeData = await qrcode.toDataURL(secret.otpauth_url);
+
+        res.json({
+            success: true,
+            secret: secret.base32,
+            qrCode: qrCodeData
+        });
+    } catch {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.post('/api/auth/2fa/verify-setup', authenticateToken, [
+    body('secret').notEmpty(),
+    body('code').isLength({ min: 6, max: 6 }),
+    validate
+], async (req, res) => {
+    const { secret, code } = req.body;
+    try {
+        const verified = speakeasy.totp.verify({
+            secret: secret,
+            encoding: 'base32',
+            token: code
+        });
+
+        if (verified) {
+            await db.run(
+                'UPDATE users SET two_factor_secret = ?, two_factor_enabled = 1 WHERE email = ?',
+                [secret, req.user.email]
+            );
+            logAudit(req.user.email, '2FA_ENABLED', `User ${req.user.email} enabled 2FA`);
+            res.json({ success: true, message: '2FA enabled successfully' });
+        } else {
+            res.status(400).json({ success: false, message: 'Invalid code' });
+        }
+    } catch {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.post('/api/auth/2fa/disable', authenticateToken, async (req, res) => {
+    try {
+        await db.run('UPDATE users SET two_factor_enabled = 0, two_factor_secret = NULL WHERE email = ?', [req.user.email]);
+        logAudit(req.user.email, '2FA_DISABLED', `User ${req.user.email} disabled 2FA`);
+        res.json({ success: true, message: '2FA disabled successfully' });
+    } catch {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// 1.3 Password Recovery
+app.post('/api/auth/forgot-password', authLimiter, [
+    body('email').isEmail().normalizeEmail(),
+    validate
+], async (req, res) => {
+    const { email } = req.body;
+    try {
+        const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
+        if (!user) {
+            return res.json({ success: true, message: 'If this email is registered, a reset link will be sent.' });
+        }
+
+        const resetTokenHash = crypto.createHash('sha256')
+            .update(crypto.randomBytes(32).toString('hex'))
+            .digest('hex');
+        const signedReset = jwt.sign({ email: user.email, tokenHash: resetTokenHash }, RESET_TOKEN_SECRET, { expiresIn: '30m' });
+        const expires = new Date(Date.now() + 30 * 60 * 1000);
+
+        await db.run(
+            'UPDATE users SET reset_token = NULL, reset_token_hash = ?, reset_token_expires = ? WHERE email = ?',
+            [resetTokenHash, expires.toISOString(), email]
+        );
+
+        try {
+            await sendResetEmail(email, signedReset, expires);
+        } catch (mailErr) {
+            logAudit(email, 'PW_RESET_EMAIL_FAILURE', `Password reset email send failed: ${mailErr.message}`);
+            return res.status(500).json({ success: false, message: 'Unable to process reset request right now' });
+        }
+
+        logAudit(email, 'PW_RESET_REQUESTED', `Password reset requested from ${req.ip}`);
+
+        res.json({ success: true, message: 'Reset link sent to your email.' });
+    } catch {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.post('/api/auth/reset-password', authLimiter, [
+    body('token').notEmpty(),
+    body('password').isLength({ min: 6 }),
+    validate
+], async (req, res) => {
+    const { token, password } = req.body;
+    try {
+        const decoded = jwt.verify(token, RESET_TOKEN_SECRET);
+        if (!decoded?.email || !decoded?.tokenHash) {
+            return res.status(400).json({ success: false, message: 'Invalid token' });
+        }
+        const user = await db.get('SELECT * FROM users WHERE email = ? AND reset_token_hash = ?', [decoded.email, decoded.tokenHash]);
+
+        if (!user || new Date(user.reset_token_expires) < new Date()) {
+            return res.status(400).json({ success: false, message: 'Invalid or expired token' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await db.run(
+            'UPDATE users SET password = ?, reset_token = NULL, reset_token_hash = NULL, reset_token_expires = NULL WHERE email = ?',
+            [hashedPassword, decoded.email]
+        );
+
+        logAudit(decoded.email, 'PW_RESET_SUCCESS', `Password reset successfully from ${req.ip}`);
+
+        res.json({ success: true, message: 'Password updated successfully' });
+    } catch {
+        res.status(400).json({ success: false, message: 'Invalid token' });
+    }
+});
+
+app.post('/api/auth/refresh', (req, res) => {
+    const refreshToken = req.cookies.refreshToken;
+    if (!refreshToken) return res.status(401).json({ success: false, message: 'No refresh token' });
+
+    jwt.verify(refreshToken, REFRESH_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+            logAudit(decoded?.email || 'unknown', 'REFRESH_TOKEN_FAILURE', `Invalid or expired refresh token from ${req.ip}`);
+            return res.status(403).json({ success: false, message: 'Invalid refresh token' });
+        }
+
+        db.get('SELECT * FROM users WHERE email = ?', [decoded.email], (err, user) => {
+            if (err || !user) {
+                logAudit(decoded.email, 'REFRESH_TOKEN_FAILURE', `User not found for refresh token from ${req.ip}`);
+                return res.status(403).json({ success: false, message: 'User not found' });
+            }
+
+            const newToken = jwt.sign(
+                { email: user.email, role: user.role, name: user.name },
+                ACCESS_TOKEN_SECRET,
+                { expiresIn: '15m' }
+            );
+            logAudit(user.email, 'REFRESH_TOKEN_SUCCESS', `Access token refreshed from ${req.ip}`);
+            res.json({ success: true, token: newToken });
+        });
+    });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+    const userEmail = req.user?.email || 'unknown'; // Attempt to get user email if authenticated
+    res.clearCookie('refreshToken', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    });
+    logAudit(userEmail, 'LOGOUT', `User logged out from ${req.ip}`);
+    res.json({ success: true, message: 'Logged out' });
+});
+
+// Protected API Routes
+app.use('/api', authenticateToken);
+
 // Profile Update
-app.put('/api/user/profile', async (req, res) => {
+app.put('/api/user/profile', [
+    body('email').isEmail().withMessage('Invalid email format').normalizeEmail(),
+    body('name').notEmpty().withMessage('Name is required').trim().escape(),
+    body('phone').optional().trim().escape(),
+    body('password').optional().isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
+    validate
+], async (req, res) => {
     const { email, name, phone, password, avatar } = req.body;
+    
+    // IDOR Protection: Ensure user is only updating their own profile
+    if (email !== req.user.email) {
+        logAudit(req.user.email, 'PROFILE_UPDATE_ATTEMPT', `Forbidden attempt to update profile for ${email}`);
+        return res.status(403).json({ success: false, message: 'Forbidden: Cannot update another user\'s profile' });
+    }
+    
     let query = 'UPDATE users SET name = ?, phone = ?, avatar = ?';
     let params = [name, phone, avatar];
     
     if (password) {
+        const hashedPassword = await bcrypt.hash(password, 10);
         query += ', password = ?';
-        params.push(password);
+        params.push(hashedPassword);
     }
     
     query += ' WHERE email = ?';
@@ -65,8 +505,11 @@ app.put('/api/user/profile', async (req, res) => {
     try {
         await db.run(query, params);
         const updatedUser = await db.get('SELECT * FROM users WHERE email = ?', [email]);
-        res.json({ success: true, user: updatedUser });
+        const { password: _, ...userWithoutPassword } = updatedUser; // Don't send password back
+        logAudit(req.user.email, 'PROFILE_UPDATE', `Updated own profile`);
+        res.json({ success: true, user: userWithoutPassword });
     } catch (err) {
+        logAudit(req.user.email, 'PROFILE_UPDATE_FAILURE', `Error updating profile: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
     }
 });
@@ -74,113 +517,225 @@ app.put('/api/user/profile', async (req, res) => {
 // 2. Balances
 app.get('/api/user/balances', async (req, res) => {
     const email = req.query.email;
-    const user = await db.get('SELECT annual_balance, sick_balance, annual_used, sick_used FROM users WHERE email = ?', [email]);
-    res.json(user || { annual_balance: 0, sick_balance: 0, annual_used: 0, sick_used: 0 });
+    // IDOR Protection: Users can only view their own balances unless admin
+    if (req.user.role !== 'admin' && email !== req.user.email) {
+        logAudit(req.user.email, 'BALANCE_VIEW_ATTEMPT', `Forbidden attempt to view balances for ${email}`);
+        return res.status(403).json({ success: false, message: 'Forbidden: Cannot view another user\'s balances' });
+    }
+    const targetEmail = req.user.role === 'admin' ? email : req.user.email;
+
+    try {
+        const user = await db.get('SELECT annual_balance, sick_balance, annual_used, sick_used FROM users WHERE email = ?', [targetEmail]);
+        res.json(user || { annual_balance: 0, sick_balance: 0, annual_used: 0, sick_used: 0 });
+    } catch (err) {
+        logAudit(req.user.email, 'BALANCE_VIEW_FAILURE', `Error viewing balances for ${targetEmail}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
 // 3. Announcements
 app.get('/api/announcements', async (req, res) => {
-    const rows = await db.all('SELECT * FROM announcements ORDER BY date DESC');
-    res.json(rows);
+    try {
+        const rows = await db.all('SELECT * FROM announcements ORDER BY date DESC');
+        res.json(rows);
+    } catch (err) {
+        logAudit(req.user?.email || 'public', 'ANNOUNCEMENT_VIEW_FAILURE', `Error viewing announcements: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
-app.post('/api/announcements', async (req, res) => {
+app.post('/api/announcements', [
+    isAdmin,
+    body('type').isIn(['event', 'news', 'policy']).withMessage('Invalid announcement type'),
+    body('title').notEmpty().withMessage('Title is required').trim().escape(),
+    body('content').optional().trim().escape(),
+    body('date').notEmpty().withMessage('Date is required').trim().escape(),
+    validate
+], async (req, res) => {
     const { type, title, content, date, author, pinned } = req.body;
     try {
         const result = await db.run(
             'INSERT INTO announcements (type, title, content, date, author, pinned) VALUES (?, ?, ?, ?, ?, ?)',
             [type, title, content || '', date, author || 'Admin', pinned ? 1 : 0]
         );
+        logAudit(req.user.email, 'ANNOUNCEMENT_CREATE', `Created announcement: ${title}`);
         res.json({ id: result.lastID, type, title, content, date, author, pinned });
     } catch (err) {
+        logAudit(req.user.email, 'ANNOUNCEMENT_CREATE_FAILURE', `Error creating announcement: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
     }
 });
 
 // 4. Requests
 app.get('/api/requests', async (req, res) => {
-    const rows = await db.all('SELECT * FROM requests ORDER BY id DESC');
-    res.json(rows);
+    try {
+        const rows = await db.all('SELECT * FROM requests ORDER BY id DESC');
+        res.json(rows);
+    } catch (err) {
+        logAudit(req.user?.email || 'public', 'REQUEST_VIEW_FAILURE', `Error viewing requests: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
-app.post('/api/requests', async (req, res) => {
+app.post('/api/requests', [
+    body('title').notEmpty().withMessage('Title is required').trim().escape(),
+    body('type').notEmpty().withMessage('Request type is required').trim().escape(),
+    body('status').notEmpty().withMessage('Status is required').trim().escape(),
+    validate
+], async (req, res) => {
     const { title, type, status, date } = req.body;
-    const result = await db.run(
-        'INSERT INTO requests (title, type, status, date) VALUES (?, ?, ?, ?)',
-        [title, type, status, date]
-    );
-    res.json({ id: result.lastID, title, type, status, date });
+    try {
+        const result = await db.run(
+            'INSERT INTO requests (title, type, status, date) VALUES (?, ?, ?, ?)',
+            [title, type, status, date]
+        );
+        logAudit(req.user.email, 'REQUEST_CREATE', `Created request: ${title}`);
+        res.json({ id: result.lastID, title, type, status, date });
+    } catch (err) {
+        logAudit(req.user.email, 'REQUEST_CREATE_FAILURE', `Error creating request: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
 // 5. Annual Leave
 app.get('/api/leave/annual', async (req, res) => {
-    const rows = await db.all('SELECT * FROM annual_leave ORDER BY id DESC');
-    res.json(rows);
+    try {
+        const rows = await db.all('SELECT * FROM annual_leave ORDER BY id DESC');
+        res.json(rows);
+    } catch (err) {
+        logAudit(req.user?.email || 'public', 'ANNUAL_LEAVE_VIEW_FAILURE', `Error viewing annual leave: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
-app.post('/api/leave/annual', async (req, res) => {
-    const { user_email, name, startDate, endDate, duration, reason, status, submitDate } = req.body;
-    const result = await db.run(
-        'INSERT INTO annual_leave (user_email, startDate, endDate, duration, reason, status, submitDate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [user_email, startDate, endDate, duration, reason, status, submitDate]
-    );
+app.post('/api/leave/annual', [
+    body('user_email').isEmail().normalizeEmail(),
+    body('startDate').isISO8601().withMessage('Invalid start date'),
+    body('endDate').isISO8601().withMessage('Invalid end date'),
+    body('duration').isInt({ min: 1 }).withMessage('Duration must be at least 1 day'),
+    body('reason').optional().trim().escape(),
+    validate
+], async (req, res) => {
+    const { startDate, endDate, duration, reason, status, submitDate } = req.body;
+    const user_email = req.user.email; // IDOR Protection: Use authenticated email
+    const name = req.user.name;       // Use authenticated name
     
-    await db.run(
-        'INSERT INTO pending_approvals (reference_id, user_email, name, type, duration, details, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [result.lastID, user_email, name, 'Annual', duration, `Annual Leave: ${startDate} to ${endDate}`, submitDate]
-    );
-
-    res.json({ id: result.lastID, user_email, startDate, endDate, duration, reason, status, submitDate });
+    try {
+        const result = await db.run(
+            'INSERT INTO annual_leave (user_email, startDate, endDate, duration, reason, status, submitDate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [user_email, startDate, endDate, duration, reason, status || 'Pending', submitDate]
+        );
+        
+        await db.run(
+            'INSERT INTO pending_approvals (reference_id, user_email, name, type, duration, details, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [result.lastID, user_email, name, 'Annual', duration, `Annual Leave: ${startDate} to ${endDate}`, submitDate]
+        );
+        logAudit(req.user.email, 'ANNUAL_LEAVE_REQUEST', `Requested annual leave from ${startDate} to ${endDate}`);
+        res.json({ id: result.lastID, user_email, startDate, endDate, duration, reason, status, submitDate });
+    } catch (err) {
+        logAudit(req.user.email, 'ANNUAL_LEAVE_REQUEST_FAILURE', `Error requesting annual leave: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
 // 6. Sick Leave
 app.get('/api/leave/sick', async (req, res) => {
-    const rows = await db.all('SELECT * FROM sick_leave ORDER BY id DESC');
-    res.json(rows);
+    try {
+        const rows = await db.all('SELECT * FROM sick_leave ORDER BY id DESC');
+        res.json(rows);
+    } catch (err) {
+        logAudit(req.user?.email || 'public', 'SICK_LEAVE_VIEW_FAILURE', `Error viewing sick leave: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
-app.post('/api/leave/sick', async (req, res) => {
-    const { user_email, name, type, duration, fileName, status, date } = req.body;
-    const result = await db.run(
-        'INSERT INTO sick_leave (user_email, type, duration, fileName, status, date) VALUES (?, ?, ?, ?, ?, ?)',
-        [user_email, type, duration, fileName, status, date]
-    );
+app.post('/api/leave/sick', [
+    body('user_email').isEmail().normalizeEmail(),
+    body('type').notEmpty().withMessage('Sick leave type is required').trim().escape(),
+    body('duration').isInt({ min: 0 }).withMessage('Duration must be a non-negative integer'),
+    body('date').notEmpty().withMessage('Date is required').trim().escape(),
+    validate
+], async (req, res) => {
+    const { type, duration, fileName, status, date } = req.body;
+    const user_email = req.user.email; // IDOR Protection
+    const name = req.user.name;
     
-    await db.run(
-        'INSERT INTO pending_approvals (reference_id, user_email, name, type, duration, details, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [result.lastID, user_email, name, 'Sick', duration, type, date]
-    );
-
-    res.json({ id: result.lastID, user_email, type, duration, fileName, status, date });
+    try {
+        const result = await db.run(
+            'INSERT INTO sick_leave (user_email, type, duration, fileName, status, date) VALUES (?, ?, ?, ?, ?, ?)',
+            [user_email, type, duration, fileName, status || 'Pending', date]
+        );
+        
+        await db.run(
+            'INSERT INTO pending_approvals (reference_id, user_email, name, type, duration, details, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [result.lastID, user_email, name, 'Sick', duration, type, date]
+        );
+        logAudit(req.user.email, 'SICK_LEAVE_REQUEST', `Requested sick leave for ${duration} days on ${date}`);
+        res.json({ id: result.lastID, user_email, type, duration, fileName, status, date });
+    } catch (err) {
+        logAudit(req.user.email, 'SICK_LEAVE_REQUEST_FAILURE', `Error requesting sick leave: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
 // 7. Lateness Tracker
 app.get('/api/lateness', async (req, res) => {
-    const rows = await db.all('SELECT * FROM lateness ORDER BY id DESC');
-    res.json(rows);
+    try {
+        const rows = await db.all('SELECT * FROM lateness ORDER BY id DESC');
+        res.json(rows);
+    } catch (err) {
+        logAudit(req.user?.email || 'public', 'LATENESS_VIEW_FAILURE', `Error viewing lateness records: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
-app.post('/api/lateness', async (req, res) => {
+app.post('/api/lateness', [
+    body('time').notEmpty().withMessage('Time is required').trim().escape(),
+    body('date').notEmpty().withMessage('Date is required').trim().escape(),
+    body('lateness').isInt({ min: 0 }).withMessage('Lateness must be a non-negative integer'),
+    body('status').notEmpty().withMessage('Status is required').trim().escape(),
+    validate
+], async (req, res) => {
     const { time, date, lateness, status } = req.body;
-    const result = await db.run(
-        'INSERT INTO lateness (time, date, lateness, status) VALUES (?, ?, ?, ?)',
-        [time, date, lateness, status]
-    );
-    res.json({ id: result.lastID, time, date, lateness, status });
+    try {
+        const result = await db.run(
+            'INSERT INTO lateness (time, date, lateness, status) VALUES (?, ?, ?, ?)',
+            [time, date, lateness, status]
+        );
+        logAudit(req.user.email, 'LATENESS_RECORD_CREATE', `Recorded lateness for ${date} at ${time}`);
+        res.json({ id: result.lastID, time, date, lateness, status });
+    } catch (err) {
+        logAudit(req.user.email, 'LATENESS_RECORD_CREATE_FAILURE', `Error creating lateness record: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
-// 8. Admin Dashboard Approvals
-app.get('/api/admin/pending', async (req, res) => {
-    const rows = await db.all('SELECT * FROM pending_approvals');
-    res.json(rows);
+// 8. Admin/Manager Dashboard Approvals
+app.get('/api/admin/pending', isManager, async (req, res) => {
+    try {
+        const rows = await db.all('SELECT * FROM pending_approvals');
+        res.json(rows);
+    } catch (err) {
+        logAudit(req.user.email, 'PENDING_APPROVALS_VIEW_FAILURE', `Error viewing pending approvals: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
-app.post('/api/admin/action', async (req, res) => {
+app.post('/api/admin/action', [
+    isManager,
+    body('id').isInt().withMessage('Invalid request ID'),
+    body('action').isIn(['Approve', 'Reject']).withMessage('Invalid action'),
+    validate
+], async (req, res) => {
     const { id, action } = req.body;
     
-    if (action === 'Approve') {
+    try {
         const pending = await db.get('SELECT * FROM pending_approvals WHERE id = ?', [id]);
-        if (pending) {
+        if (!pending) {
+            return res.status(404).json({ success: false, message: 'Pending approval not found' });
+        }
+
+        if (action === 'Approve') {
             if (pending.type === 'Annual') {
                 await db.run('UPDATE annual_leave SET status = ? WHERE id = ?', ['Approved', pending.reference_id]);
                 await db.run('UPDATE users SET annual_balance = annual_balance - ?, annual_used = annual_used + ? WHERE email = ?', [pending.duration, pending.duration, pending.user_email]);
@@ -188,137 +743,307 @@ app.post('/api/admin/action', async (req, res) => {
                 await db.run('UPDATE sick_leave SET status = ? WHERE id = ?', ['Approved', pending.reference_id]);
                 await db.run('UPDATE users SET sick_balance = sick_balance - ?, sick_used = sick_used + ? WHERE email = ?', [pending.duration, pending.duration, pending.user_email]);
             }
-        }
-    } else if (action === 'Reject') {
-        const pending = await db.get('SELECT * FROM pending_approvals WHERE id = ?', [id]);
-        if (pending) {
+            logAudit(req.user.email, 'APPROVAL_ACTION', `Approved ${pending.type} request for ${pending.user_email} (ID: ${pending.reference_id})`);
+        } else if (action === 'Reject') {
             if (pending.type === 'Annual') {
                 await db.run('UPDATE annual_leave SET status = ? WHERE id = ?', ['Rejected', pending.reference_id]);
             } else if (pending.type === 'Sick') {
                 await db.run('UPDATE sick_leave SET status = ? WHERE id = ?', ['Rejected', pending.reference_id]);
             }
+            logAudit(req.user.email, 'APPROVAL_ACTION', `Rejected ${pending.type} request for ${pending.user_email} (ID: ${pending.reference_id})`);
         }
+        
+        await db.run('DELETE FROM pending_approvals WHERE id = ?', [id]);
+        const remaining = await db.all('SELECT * FROM pending_approvals');
+        res.json({ success: true, pendingApprovals: remaining });
+    } catch (err) {
+        logAudit(req.user.email, 'APPROVAL_ACTION_FAILURE', `Error processing approval action for ID ${id}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
     }
-    
-    await db.run('DELETE FROM pending_approvals WHERE id = ?', [id]);
-    const remaining = await db.all('SELECT * FROM pending_approvals');
-    res.json({ success: true, pendingApprovals: remaining });
 });
 
 // 9. Performance Reviews
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', isAdmin, async (req, res) => {
     // For admin dropdowns
-    const rows = await db.all('SELECT email, name FROM users WHERE role = ?', ['employee']);
-    res.json(rows);
+    try {
+        const rows = await db.all('SELECT email, name FROM users WHERE role = ?', ['employee']);
+        res.json(rows);
+    } catch (err) {
+        logAudit(req.user.email, 'USER_LIST_VIEW_FAILURE', `Error viewing user list: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
 app.get('/api/performance', async (req, res) => {
-    const { email, role } = req.query;
-    let rows = [];
-    if (role === 'admin') {
-        rows = await db.all('SELECT p.*, u.name as user_name FROM performance_reviews p LEFT JOIN users u ON p.user_email = u.email ORDER BY p.id DESC');
-    } else {
-        rows = await db.all('SELECT p.*, u.name as user_name FROM performance_reviews p LEFT JOIN users u ON p.user_email = u.email WHERE p.user_email = ? ORDER BY p.id DESC', [email]);
-    }
-    res.json(rows);
-});
-
-app.post('/api/performance/init', async (req, res) => {
-    const { user_email, manager_email, period, date } = req.body;
-    const result = await db.run(
-        'INSERT INTO performance_reviews (user_email, manager_email, period, status, date) VALUES (?, ?, ?, ?, ?)',
-        [user_email, manager_email, period, 'Awaiting Employee', date]
-    );
-
-    await db.run(
-        'INSERT INTO pending_approvals (user_email, name, type, details, date) VALUES (?, ?, ?, ?, ?)',
-        [user_email, user_email, 'Performance', `Complete Self Assessment for ${period}`, date]
-    );
-
-    res.json({ id: result.lastID, success: true });
-});
-
-app.put('/api/performance/employee', async (req, res) => {
-    const { id, self_assessment } = req.body;
-    await db.run(
-        'UPDATE performance_reviews SET self_assessment = ?, status = ? WHERE id = ?',
-        [self_assessment, 'Awaiting Manager', id]
-    );
+    const { email } = req.query;
     
-    // Alert Admin
-    const review = await db.get('SELECT * FROM performance_reviews WHERE id = ?', [id]);
-    await db.run(
-        'INSERT INTO pending_approvals (reference_id, user_email, name, type, details, date) VALUES (?, ?, ?, ?, ?, ?)',
-        [id, review.user_email, 'Administrator', 'Performance', `Action Required: Finalize ${review.period} for ${review.user_email}`, new Date().toLocaleDateString('en-US')]
-    );
-    res.json({ success: true });
+    // Security: Ensure users can only see their own performance if not admin
+    const targetEmail = req.user.role === 'admin' ? (email || req.user.email) : req.user.email;
+    
+    let rows = [];
+    try {
+        if (req.user.role === 'admin') {
+            rows = await db.all('SELECT p.*, u.name as user_name FROM performance_reviews p LEFT JOIN users u ON p.user_email = u.email ORDER BY p.id DESC');
+        } else {
+            rows = await db.all('SELECT p.*, u.name as user_name FROM performance_reviews p LEFT JOIN users u ON p.user_email = u.email WHERE p.user_email = ? ORDER BY p.id DESC', [targetEmail]);
+        }
+        res.json(rows);
+    } catch (err) {
+        logAudit(req.user.email, 'PERFORMANCE_REVIEW_VIEW_FAILURE', `Error viewing performance reviews for ${targetEmail}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
-app.put('/api/performance/manager', async (req, res) => {
+app.post('/api/performance/init', [
+    isAdmin,
+    body('user_email').isEmail().normalizeEmail(),
+    body('manager_email').isEmail().normalizeEmail(),
+    body('period').notEmpty().withMessage('Period is required').trim().escape(),
+    validate
+], async (req, res) => {
+    const { user_email, manager_email, period, date } = req.body;
+    try {
+        const result = await db.run(
+            'INSERT INTO performance_reviews (user_email, manager_email, period, status, date) VALUES (?, ?, ?, ?, ?)',
+            [user_email, manager_email, period, 'Awaiting Employee', date]
+        );
+
+        await db.run(
+            'INSERT INTO pending_approvals (user_email, name, type, details, date) VALUES (?, ?, ?, ?, ?)',
+            [user_email, user_email, 'Performance', `Complete Self Assessment for ${period}`, date]
+        );
+        logAudit(req.user.email, 'PERFORMANCE_REVIEW_INIT', `Initiated performance review for ${user_email} for period ${period}`);
+        res.json({ id: result.lastID, success: true });
+    } catch (err) {
+        logAudit(req.user.email, 'PERFORMANCE_REVIEW_INIT_FAILURE', `Error initiating performance review for ${user_email}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+app.put('/api/performance/employee', [
+    body('id').isInt().withMessage('Invalid review ID'),
+    body('self_assessment').notEmpty().withMessage('Self assessment is required').trim().escape(),
+    validate
+], async (req, res) => {
+    const { id, self_assessment } = req.body;
+    
+    try {
+        // Ownership check
+        const review = await db.get('SELECT * FROM performance_reviews WHERE id = ?', [id]);
+        if (!review || review.user_email !== req.user.email) {
+            logAudit(req.user.email, 'PERFORMANCE_SELF_ASSESS_ATTEMPT', `Forbidden attempt to update review ID ${id}`);
+            return res.status(403).json({ success: false, message: 'Forbidden: Cannot update another user\'s performance review' });
+        }
+
+        await db.run(
+            'UPDATE performance_reviews SET self_assessment = ?, status = ? WHERE id = ?',
+            [self_assessment, 'Awaiting Manager', id]
+        );
+        
+        // Alert Admin
+        await db.run(
+            'INSERT INTO pending_approvals (reference_id, user_email, name, type, details, date) VALUES (?, ?, ?, ?, ?, ?)',
+            [id, review.user_email, 'Administrator', 'Performance', `Action Required: Finalize ${review.period} for ${review.user_email}`, new Date().toLocaleDateString('en-US')]
+        );
+        logAudit(req.user.email, 'PERFORMANCE_SELF_ASSESS', `Completed self-assessment for review ID ${id}`);
+        res.json({ success: true });
+    } catch (err) {
+        logAudit(req.user.email, 'PERFORMANCE_SELF_ASSESS_FAILURE', `Error completing self-assessment for review ID ${id}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+app.put('/api/performance/manager', [
+    isManager,
+    body('id').isInt().withMessage('Invalid review ID'),
+    body('manager_feedback').notEmpty().withMessage('Manager feedback is required').trim().escape(),
+    body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
+    validate
+], async (req, res) => {
     const { id, manager_feedback, rating } = req.body;
-    await db.run(
-        'UPDATE performance_reviews SET manager_feedback = ?, rating = ?, status = ? WHERE id = ?',
-        [manager_feedback, rating, 'Completed', id]
-    );
-    // Clear the pending approval
-    await db.run('DELETE FROM pending_approvals WHERE reference_id = ? AND type = ?', [id, 'Performance']);
-    res.json({ success: true });
+    try {
+        await db.run(
+            'UPDATE performance_reviews SET manager_feedback = ?, rating = ?, status = ? WHERE id = ?',
+            [manager_feedback, rating, 'Completed', id]
+        );
+        // Clear the pending approval
+        await db.run('DELETE FROM pending_approvals WHERE reference_id = ? AND type = ?', [id, 'Performance']);
+        logAudit(req.user.email, 'PERFORMANCE_MANAGER_FEEDBACK', `Provided manager feedback for review ID ${id}`);
+        res.json({ success: true });
+    } catch (err) {
+        logAudit(req.user.email, 'PERFORMANCE_MANAGER_FEEDBACK_FAILURE', `Error providing manager feedback for review ID ${id}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
 // 10. Documents
-app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
-    const { title } = req.body;
-    const { filename, size } = req.file;
-    const date = new Date().toLocaleDateString('en-US');
-    await db.run('INSERT INTO documents (title, filename, size, date) VALUES (?, ?, ?, ?)', [title, filename, size, date]);
-    res.json({ success: true });
+app.post('/api/documents/upload', (req, res) => {
+    upload.single('file')(req, res, async (uploadErr) => {
+        if (uploadErr instanceof multer.MulterError && uploadErr.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ success: false, message: 'File exceeds 10MB size limit' });
+        }
+        if (uploadErr) {
+            return res.status(400).json({ success: false, message: uploadErr.message || 'Invalid file upload' });
+        }
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'A valid file is required' });
+        }
+        const title = typeof req.body.title === 'string' ? req.body.title.trim().slice(0, 120) : '';
+        if (!title) {
+            return res.status(400).json({ success: false, message: 'Title is required' });
+        }
+        const { filename, size } = req.file;
+        const date = new Date().toLocaleDateString('en-US');
+        try {
+            await db.run('INSERT INTO documents (title, filename, size, date) VALUES (?, ?, ?, ?)', [title, filename, size, date]);
+            logAudit(req.user.email, 'DOCUMENT_UPLOAD', `Uploaded document: ${title} (${filename})`);
+            res.json({ success: true });
+        } catch (err) {
+            logAudit(req.user.email, 'DOCUMENT_UPLOAD_FAILURE', `Error uploading document ${filename}: ${err.message}`);
+            res.status(500).json({ success: false, message: 'Database error' });
+        }
+    });
 });
 
 app.get('/api/documents', async (req, res) => {
-    const rows = await db.all('SELECT * FROM documents ORDER BY id DESC');
-    res.json(rows);
+    try {
+        const rows = await db.all('SELECT * FROM documents ORDER BY id DESC');
+        res.json(rows);
+    } catch (err) {
+        logAudit(req.user?.email || 'public', 'DOCUMENT_VIEW_FAILURE', `Error viewing documents: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
 app.get('/api/documents/download/:filename', (req, res) => {
     const filepath = path.join(uploadDir, req.params.filename);
-    res.download(filepath);
+    if (fs.existsSync(filepath)) {
+        logAudit(req.user.email, 'DOCUMENT_DOWNLOAD', `Downloaded document: ${req.params.filename}`);
+        res.download(filepath);
+    } else {
+        logAudit(req.user.email, 'DOCUMENT_DOWNLOAD_FAILURE', `Attempted to download non-existent document: ${req.params.filename}`);
+        res.status(404).json({ success: false, message: 'File not found' });
+    }
 });
 
-// 11. Calendar
+// 11. User Management (Admin Only)
+app.get('/api/admin/users', isAdmin, async (req, res) => {
+    try {
+        const rows = await db.all('SELECT email, name, role, annual_balance, sick_balance, annual_used, sick_used, phone FROM users');
+        res.json(rows);
+    } catch (err) {
+        logAudit(req.user.email, 'ADMIN_USER_LIST_VIEW_FAILURE', `Error viewing admin user list: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+app.post('/api/admin/users', [
+    isAdmin,
+    body('email').isEmail().normalizeEmail(),
+    body('password').isLength({ min: 6 }),
+    body('name').notEmpty(),
+    body('role').isIn(['employee', 'manager', 'admin']),
+    validate
+], async (req, res) => {
+    const { email, password, name, role } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    try {
+        await db.run(
+            'INSERT INTO users (email, password, role, name) VALUES (?, ?, ?, ?)',
+            [email, hashedPassword, role, name]
+        );
+        logAudit(req.user.email, 'ADMIN_USER_CREATE', `Created user: ${email} with role ${role}`);
+        res.json({ success: true });
+    } catch (err) {
+        logAudit(req.user.email, 'ADMIN_USER_CREATE_FAILURE', `Error creating user ${email}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'User already exists or DB error' });
+    }
+});
+
+app.put('/api/admin/users/:email', [
+    isAdmin,
+    body('name').notEmpty(),
+    body('role').isIn(['employee', 'manager', 'admin']),
+    validate
+], async (req, res) => {
+    const { email } = req.params;
+    const { name, role, phone, annual_balance, sick_balance } = req.body;
+    try {
+        const oldUser = await db.get('SELECT role FROM users WHERE email = ?', [email]);
+        await db.run(
+            'UPDATE users SET name = ?, role = ?, phone = ?, annual_balance = ?, sick_balance = ? WHERE email = ?',
+            [name, role, phone, annual_balance, sick_balance, email]
+        );
+        
+        if (oldUser && oldUser.role !== role) {
+            logAudit(req.user.email, 'ADMIN_ROLE_CHANGE', `Admin ${req.user.email} changed ${email} role from ${oldUser.role} to ${role}`);
+        } else {
+            logAudit(req.user.email, 'ADMIN_USER_UPDATE', `Admin ${req.user.email} updated user ${email}`);
+        }
+
+        res.json({ success: true, message: 'User updated successfully' });
+    } catch (err) {
+        logAudit(req.user.email, 'ADMIN_USER_UPDATE_FAILURE', `Error updating user ${email}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.delete('/api/admin/users/:email', isAdmin, async (req, res) => {
+    const { email } = req.params;
+    if (email === req.user.email) {
+        logAudit(req.user.email, 'ADMIN_USER_DELETE_ATTEMPT', `Attempted to delete own account: ${email}`);
+        return res.status(400).json({ success: false, message: 'Cannot delete yourself' });
+    }
+    try {
+        await db.run('DELETE FROM users WHERE email = ?', [email]);
+        logAudit(req.user.email, 'ADMIN_USER_DELETE', `Deleted user ${email}`);
+        res.json({ success: true, message: 'User deleted' });
+    } catch (err) {
+        logAudit(req.user.email, 'ADMIN_USER_DELETE_FAILURE', `Error deleting user ${email}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+// 12. Calendar
 app.get('/api/calendar', async (req, res) => {
-    const announcements = await db.all('SELECT title, date FROM announcements');
-    const annualLeaves = await db.all('SELECT * FROM annual_leave WHERE status = "Approved"');
-    const sickLeaves = await db.all('SELECT * FROM sick_leave WHERE status = "Approved"');
-    
-    const events = [];
-    announcements.forEach(a => {
-        events.push({
-            title: '[Event] ' + a.title,
-            start: new Date(a.date),
-            end: new Date(a.date),
-            allDay: true,
-            type: 'event'
+    try {
+        const announcements = await db.all('SELECT title, date FROM announcements');
+        const annualLeaves = await db.all('SELECT * FROM annual_leave WHERE status = "Approved"');
+        const sickLeaves = await db.all('SELECT * FROM sick_leave WHERE status = "Approved"');
+        
+        const events = [];
+        announcements.forEach(a => {
+            events.push({
+                title: '[Event] ' + a.title,
+                start: new Date(a.date),
+                end: new Date(a.date),
+                allDay: true,
+                type: 'event'
+            });
         });
-    });
-    annualLeaves.forEach(l => {
-        events.push({
-            title: `[Leave] ${l.user_email.split('@')[0]}`,
-            start: new Date(l.startDate),
-            end: new Date(l.endDate),
-            allDay: true,
-            type: 'leave'
+        annualLeaves.forEach(l => {
+            events.push({
+                title: `[Leave] ${l.user_email.split('@')[0]}`,
+                start: new Date(l.startDate),
+                end: new Date(l.endDate),
+                allDay: true,
+                type: 'leave'
+            });
         });
-    });
-    sickLeaves.forEach(s => {
-        events.push({
-            title: `[Sick] ${s.user_email.split('@')[0]}`,
-            start: new Date(s.date),
-            end: new Date(s.date),
-            allDay: true,
-            type: 'sick'
+        sickLeaves.forEach(s => {
+            events.push({
+                title: `[Sick] ${s.user_email.split('@')[0]}`,
+                start: new Date(s.date),
+                end: new Date(s.date),
+                allDay: true,
+                type: 'sick'
+            });
         });
-    });
-    res.json(events);
+        res.json(events);
+    } catch (err) {
+        logAudit(req.user?.email || 'public', 'CALENDAR_VIEW_FAILURE', `Error viewing calendar: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
 });
 
 // Serve frontend static files in production

@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { api } from '../utils/api';
 
-export default function Announcements({ user }) {
+export default function Announcements({ token }) {
     const [announcements, setAnnouncements] = useState([]);
     const [filter, setFilter] = useState('all');
 
     useEffect(() => {
-        fetch('/api/announcements')
+        api.get('/api/announcements', token)
             .then(res => res.json())
             .then(data => setAnnouncements(data))
             .catch(err => console.error(err));
-    }, []);
+    }, [token]);
 
     const filteredAnnouncements = filter === 'all' 
         ? announcements 

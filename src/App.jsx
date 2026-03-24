@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Login from './pages/Login';
 import Landing from './pages/Landing';
@@ -12,66 +13,80 @@ import Profile from './pages/Profile';
 import Performance from './pages/Performance';
 import Documents from './pages/Documents';
 import CalendarPage from './pages/CalendarPage';
+import UserManagement from './pages/UserManagement';
+import ForgotPassword from './pages/ForgotPassword';
 import './index.css';
 
-function MainContent({ user, setUser, currentPage }) {
+function MainContent({ user, setUser, token, currentPage }) {
     return (
         <div className="main-content">
-            {currentPage === 'dashboard' && <Dashboard user={user} />}
-            {currentPage === 'announcements' && <Announcements user={user} />}
-            {currentPage === 'annual-leave' && <AnnualLeave user={user} />}
-            {currentPage === 'sick-leave' && <SickLeave user={user} />}
-            {currentPage === 'lateness' && <LatenessTracker user={user} />}
-            {currentPage === 'requests' && <Requests user={user} />}
-            {currentPage === 'performance' && <Performance user={user} />}
-            {currentPage === 'documents' && <Documents user={user} />}
-            {currentPage === 'calendar' && <CalendarPage user={user} />}
-            {currentPage === 'profile' && <Profile user={user} setUser={setUser} />}
-            {currentPage === 'admin' && user.role === 'admin' && <ManagementDashboard />}
+            {currentPage === 'dashboard' && <Dashboard user={user} token={token} />}
+            {currentPage === 'announcements' && <Announcements user={user} token={token} />}
+            {currentPage === 'annual-leave' && <AnnualLeave user={user} token={token} />}
+            {currentPage === 'sick-leave' && <SickLeave user={user} token={token} />}
+            {currentPage === 'lateness' && <LatenessTracker user={user} token={token} />}
+            {currentPage === 'requests' && <Requests user={user} token={token} />}
+            {currentPage === 'performance' && <Performance user={user} token={token} />}
+            {currentPage === 'documents' && <Documents user={user} token={token} />}
+            {currentPage === 'calendar' && <CalendarPage user={user} token={token} />}
+            {currentPage === 'users' && user.role === 'admin' && <UserManagement token={token} />}
+            {currentPage === 'profile' && <Profile user={user} setUser={setUser} token={token} />}
+            {currentPage === 'admin' && user.role === 'admin' && <ManagementDashboard token={token} />}
+        </div>
+    );
+}
+
+function AuthenticatedApp({ user, setUser, token, onLogout }) {
+    const [currentPage, setCurrentPage] = useState('dashboard');
+    return (
+        <div style={{ display: 'flex' }}>
+            <Sidebar user={user} currentPage={currentPage} onNavigate={setCurrentPage} onLogout={onLogout} />
+            <MainContent user={user} setUser={setUser} token={token} currentPage={currentPage} />
         </div>
     );
 }
 
 function App() {
-    const [currentUser, setCurrentUser] = useState(null);
-    const [currentPage, setCurrentPage] = useState('dashboard');
-    // Always show landing first; skip only if already logged in from localStorage
-    const [showLanding, setShowLanding] = useState(true);
+    const savedUser = localStorage.getItem('thesl_hr_user');
+    const savedToken = localStorage.getItem('thesl_hr_token');
+    const [currentUser, setCurrentUser] = useState(() => (savedUser && savedToken ? JSON.parse(savedUser) : null));
+    const [authToken, setAuthToken] = useState(() => (savedUser && savedToken ? savedToken : null));
+    const [showLanding, setShowLanding] = useState(() => !(savedUser && savedToken));
+    const navigate = useNavigate();
 
-    useEffect(() => {
-        const savedUser = localStorage.getItem('thesl_hr_user');
-        if (savedUser) {
-            setCurrentUser(JSON.parse(savedUser));
-            setShowLanding(false); // already logged in, go straight to app
-        }
-    }, []);
-
-    const handleLogin = (user) => {
+    const handleLogin = (user, token) => {
         setCurrentUser(user);
+        setAuthToken(token);
         localStorage.setItem('thesl_hr_user', JSON.stringify(user));
+        localStorage.setItem('thesl_hr_token', token);
+        navigate('/'); // Go to home which will show AuthApp
     };
 
     const handleLogout = () => {
         setCurrentUser(null);
+        setAuthToken(null);
         localStorage.removeItem('thesl_hr_user');
-        setCurrentPage('dashboard');
-        setShowLanding(true); // go back to landing after logout
+        localStorage.removeItem('thesl_hr_token');
+        setShowLanding(true);
+        navigate('/');
     };
 
-    // Show landing if not yet dismissed AND not already authenticated
-    if (showLanding && !currentUser) {
-        return <Landing onGoToLogin={() => setShowLanding(false)} />;
-    }
-
-    if (!currentUser) {
-        return <Login onLogin={handleLogin} />;
-    }
-
     return (
-        <div style={{ display: 'flex' }}>
-            <Sidebar user={currentUser} currentPage={currentPage} onNavigate={setCurrentPage} onLogout={handleLogout} />
-            <MainContent user={currentUser} setUser={handleLogin} currentPage={currentPage} />
-        </div>
+        <Routes>
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ForgotPassword />} />
+            <Route path="/login" element={
+                currentUser ? <Navigate to="/" /> : <Login onLogin={handleLogin} />
+            } />
+            <Route path="/" element={
+                currentUser ? (
+                    <AuthenticatedApp user={currentUser} setUser={handleLogin} token={authToken} onLogout={handleLogout} />
+                ) : (
+                    showLanding ? <Landing onGoToLogin={() => setShowLanding(false)} /> : <Navigate to="/login" />
+                )
+            } />
+            <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
     );
 }
 

@@ -1,16 +1,43 @@
-# React + Vite
+# thesl-hr-portal
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+HR portal application with a Vite/React frontend and an Express/SQLite backend.
 
-Currently, two official plugins are available:
+## Getting Started
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Install dependencies:
+   - `npm install`
+2. Create your environment file:
+   - `cp .env.example .env`
+3. Start the development server:
+   - `npm run dev`
 
-## React Compiler
+## Required Environment Variables
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+These values are required for the backend to start:
 
-## Expanding the ESLint configuration
+- `JWT_ACCESS_SECRET`
+- `JWT_REFRESH_SECRET`
+- `JWT_RESET_SECRET`
+- `CORS_ORIGINS`
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Optional:
+
+- `NODE_ENV` (defaults to `development`)
+- `PORT` (defaults to `3000`)
+- `FRONTEND_URL` (defaults to first origin in `CORS_ORIGINS`)
+- SMTP config for password reset delivery:
+  - `SMTP_HOST`
+  - `SMTP_PORT`
+  - `SMTP_SECURE`
+  - `SMTP_USER`
+  - `SMTP_PASS`
+  - `SMTP_FROM`
+  - In non-production, if SMTP is not configured, the app uses an Ethereal test inbox and logs only a preview URL.
+
+## Security Notes
+
+- JWT secrets are required and must be unique per token type.
+- CORS is allowlist-based via `CORS_ORIGINS` (comma-separated).
+- Uploads are restricted by type and size (10MB max).
+- Password reset uses short-lived hashed token verification.
+- Reset links are delivered via SMTP and not logged in plaintext.
