@@ -23,8 +23,10 @@ export default function UserManagement({ token }) {
             const res = await api.get('/api/admin/users', token);
             const data = await res.json();
             setUsers(data);
+            setStatus({ type: '', message: '' });
         } catch (err) {
             console.error('Failed to fetch users', err);
+            setStatus({ type: 'error', message: 'Failed to load users. Please try again.' });
         } finally {
             setLoading(false);
         }
@@ -87,16 +89,19 @@ export default function UserManagement({ token }) {
 
     const handleDelete = async (email) => {
         if (!window.confirm(`Are you sure you want to delete ${email}?`)) return;
+        setStatus({ type: 'info', message: 'Deleting user...' });
         try {
             const res = await api.delete(`/api/admin/users/${email}`, token);
             if (res.ok) {
+                setStatus({ type: 'success', message: 'User deleted successfully!' });
                 fetchUsers();
             } else {
                 const data = await res.json();
-                alert(data.message || 'Delete failed');
+                setStatus({ type: 'error', message: data.message || 'Delete failed' });
             }
         } catch (err) {
             console.error(err);
+            setStatus({ type: 'error', message: 'Network error. Failed to delete user.' });
         }
     };
 

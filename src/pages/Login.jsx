@@ -20,24 +20,42 @@ export default function Login({ onLogin }) {
                 ? JSON.stringify({ email, code: mfaCode })
                 : JSON.stringify({ email, password });
 
-            const res = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body
-            });
-            const data = await res.json();
-            
-            if (data.success) {
-                if (data.mfaRequired) {
-                    setMfaRequired(true);
-                } else {
-                    onLogin(data.user, data.token);
+            // Retry logic with exponential backoff for network failures
+            let lastError = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                try {
+                    const res = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body
+                    });
+                    const data = await res.json();
+                    
+                    if (data.success) {
+                        if (data.mfaRequired) {
+                            setMfaRequired(true);
+                        } else {
+                            onLogin(data.user, data.token);
+                        }
+                    } else {
+                        setError(data.message || 'Invalid email or password');
+                    }
+                    lastError = null;
+                    break;
+                } catch (err) {
+                    lastError = err;
+                    if (attempt < 2) {
+                        // Show retrying message for attempts < 2
+                        setError(`Connection issue - retrying... (attempt ${attempt + 1} of 3)`);
+                        // Exponential backoff: 100ms, 200ms
+                        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 100));
+                    }
                 }
-            } else {
-                setError(data.message || 'Invalid email or password');
             }
-        } catch {
-            setError('Failed to connect to the server');
+            
+            if (lastError) {
+                setError('Unable to connect to server. Please check your internet connection and try again.');
+            }
         } finally {
             setIsLoading(false);
         }

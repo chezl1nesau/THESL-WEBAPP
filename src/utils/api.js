@@ -10,6 +10,24 @@ const onRefreshed = (token) => {
     refreshSubscribers = [];
 };
 
+// Retry logic helper with exponential backoff
+const fetchWithRetry = async (url, options, maxRetries = 3) => {
+    let lastError;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            return await fetch(url, options);
+        } catch (error) {
+            lastError = error;
+            if (attempt < maxRetries - 1) {
+                // Exponential backoff: 100ms, 200ms, 400ms
+                const delay = Math.pow(2, attempt) * 100;
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+    throw lastError;
+};
+
 export const apiFetch = async (url, options = {}, token = null) => {
     // Favor the token from localStorage if available, as it might be fresher
     const currentToken = localStorage.getItem('thesl_hr_token') || token;
@@ -23,11 +41,17 @@ export const apiFetch = async (url, options = {}, token = null) => {
         headers['Authorization'] = `Bearer ${currentToken}`;
     }
 
-    const response = await fetch(url, {
-        ...options,
-        headers,
-        credentials: 'include'
-    });
+    let response;
+    try {
+        response = await fetchWithRetry(url, {
+            ...options,
+            headers,
+            credentials: 'include'
+        }, 3);
+    } catch (err) {
+        // If all retries fail, throw the error to be handled by caller
+        throw err;
+    }
 
     if (response.status === 401 && !options._retry) {
         if (isRefreshing) {
@@ -40,10 +64,10 @@ export const apiFetch = async (url, options = {}, token = null) => {
 
         isRefreshing = true;
         try {
-            const refreshResponse = await fetch('/api/auth/refresh', {
+            const refreshResponse = await fetchWithRetry('/api/auth/refresh', {
                 method: 'POST',
                 credentials: 'include'
-            });
+            }, 3);
             const data = await refreshResponse.json();
 
             if (data.success) {
@@ -76,11 +100,11 @@ export const api = {
         if (token) {
             headers['Authorization'] = `Bearer ${token}`;
         }
-        return fetch(url, {
+        return fetchWithRetry(url, {
             method: 'POST',
             body: formData,
             headers,
             credentials: 'include'
-        });
+        }, 3);
     }
 };

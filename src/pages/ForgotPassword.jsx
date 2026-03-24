@@ -23,7 +23,7 @@ export default function ForgotPassword() {
             const data = await res.json();
             setStatus({ type: 'success', message: data.message });
         } catch {
-            setStatus({ type: 'error', message: 'Network error occurred' });
+            setStatus({ type: 'error', message: 'Network error. Please check your connection and try again.' });
         } finally {
             setLoading(false);
         }
@@ -48,7 +48,7 @@ export default function ForgotPassword() {
                 setStatus({ type: 'error', message: data.message });
             }
         } catch {
-            setStatus({ type: 'error', message: 'Network error occurred' });
+            setStatus({ type: 'error', message: 'Network error. Please check your connection and try again.' });
         } finally {
             setLoading(false);
         }

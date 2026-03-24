@@ -4,6 +4,8 @@ import { api } from '../utils/api';
 export default function LatenessTracker({ token }) {
     const [currentTime, setCurrentTime] = useState(new Date());
     const [history, setHistory] = useState([]);
+    const [status, setStatus] = useState({ type: '', message: '' });
+    const [loadError, setLoadError] = useState('');
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -11,10 +13,14 @@ export default function LatenessTracker({ token }) {
     }, []);
 
     useEffect(() => {
+        setLoadError('');
         api.get('/api/lateness', token)
             .then(res => res.json())
             .then(data => setHistory(data))
-            .catch(err => console.error(err));
+            .catch(err => {
+                console.error(err);
+                setLoadError('Failed to load lateness history');
+            });
     }, [token]);
 
     const handleArrival = async () => {
@@ -37,11 +43,15 @@ export default function LatenessTracker({ token }) {
         };
 
         try {
+            setStatus({ type: 'info', message: 'Logging arrival...' });
             const res = await api.post('/api/lateness', payload, token);
             const newRecord = await res.json();
             setHistory([newRecord, ...history]);
+            setStatus({ type: 'success', message: `Arrival logged - ${statusText}` });
+            setTimeout(() => setStatus({ type: '', message: '' }), 3000);
         } catch(err) {
             console.error('Failed to log arrival', err);
+            setStatus({ type: 'error', message: 'Failed to log arrival. Please try again.' });
         }
     };
 
@@ -55,6 +65,18 @@ export default function LatenessTracker({ token }) {
                 <h1>Lateness Tracker</h1>
                 <p>Track your arrival times and lateness</p>
             </div>
+
+            {loadError && (
+                <div style={{ padding: '1rem', marginBottom: '1rem', borderRadius: '8px', backgroundColor: '#fde8e8', color: '#9b1c1c' }}>
+                    {loadError}
+                </div>
+            )}
+
+            {status.message && (
+                <div style={{ padding: '1rem', marginBottom: '1rem', borderRadius: '8px', backgroundColor: status.type === 'success' ? '#def7ec' : status.type === 'error' ? '#fde8e8' : '#e1effe', color: status.type === 'success' ? '#03543f' : status.type === 'error' ? '#9b1c1c' : '#1e429f' }}>
+                    {status.message}
+                </div>
+            )}
 
             <div className="stats-grid">
                 <div className="stat-card">

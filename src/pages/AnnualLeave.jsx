@@ -5,6 +5,8 @@ export default function AnnualLeave({ user, token }) {
     const [requests, setRequests] = useState([]);
     const [balances, setBalances] = useState({ annual_balance: 0, annual_used: 0 });
     const [showForm, setShowForm] = useState(false);
+    const [status, setStatus] = useState({ type: '', message: '' });
+    const [loadError, setLoadError] = useState('');
     
     // Form state
     const [startDate, setStartDate] = useState('');
@@ -12,16 +14,23 @@ export default function AnnualLeave({ user, token }) {
     const [reason, setReason] = useState('');
 
     useEffect(() => {
+        setLoadError('');
         api.get('/api/leave/annual', token)
             .then(res => res.json())
              // For a real app we'd filter by user.email, but for demo we just show all or filter here
             .then(data => setRequests(data.filter(r => r.user_email === user.email)))
-            .catch(err => console.error(err));
+            .catch(err => {
+                console.error(err);
+                setLoadError('Failed to load annual leave requests');
+            });
             
         api.get(`/api/user/balances?email=${user.email}`, token)
             .then(res => res.json())
             .then(data => setBalances(data))
-            .catch(err => console.error(err));
+            .catch(err => {
+                console.error(err);
+                setLoadError('Failed to load leave balances');
+            });
     }, [user.email, token]);
 
     const handleSubmit = async (e) => {
@@ -43,6 +52,7 @@ export default function AnnualLeave({ user, token }) {
         };
         
         try {
+            setStatus({ type: 'info', message: 'Submitting request...' });
             const res = await api.post('/api/leave/annual', payload, token);
             const newRequest = await res.json();
             setRequests([newRequest, ...requests]);
@@ -50,8 +60,11 @@ export default function AnnualLeave({ user, token }) {
             setStartDate('');
             setEndDate('');
             setReason('');
+            setStatus({ type: 'success', message: 'Leave request submitted successfully!' });
+            setTimeout(() => setStatus({ type: '', message: '' }), 3000);
         } catch(err) {
             console.error('Failed to submit leave', err);
+            setStatus({ type: 'error', message: 'Failed to submit leave request. Please try again.' });
         }
     };
 
@@ -61,6 +74,18 @@ export default function AnnualLeave({ user, token }) {
                 <h1>Annual Leave</h1>
                 <p>Request and track your annual leave</p>
             </div>
+
+            {loadError && (
+                <div style={{ padding: '1rem', marginBottom: '1rem', borderRadius: '8px', backgroundColor: '#fde8e8', color: '#9b1c1c' }}>
+                    {loadError}
+                </div>
+            )}
+
+            {status.message && (
+                <div style={{ padding: '1rem', marginBottom: '1rem', borderRadius: '8px', backgroundColor: status.type === 'success' ? '#def7ec' : status.type === 'error' ? '#fde8e8' : '#e1effe', color: status.type === 'success' ? '#03543f' : status.type === 'error' ? '#9b1c1c' : '#1e429f' }}>
+                    {status.message}
+                </div>
+            )}
 
             <div className="stats-grid">
                 <div className="stat-card">

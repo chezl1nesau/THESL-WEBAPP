@@ -6,23 +6,23 @@ export default function Documents({ user, token }) {
     const [title, setTitle] = useState('');
     const [file, setFile] = useState(null);
     const [status, setStatus] = useState({ type: '', message: '' });
+    const [loadError, setLoadError] = useState('');
 
     const fetchDocuments = useCallback(async () => {
+        setLoadError('');
         try {
             const res = await api.get('/api/documents', token);
             const data = await res.json();
             setDocuments(data);
         } catch (err) {
             console.error(err);
+            setLoadError('Failed to load documents');
         }
     }, [token]);
 
     useEffect(() => {
-        api.get('/api/documents', token)
-            .then(res => res.json())
-            .then(data => setDocuments(data))
-            .catch(err => console.error(err));
-    }, [token]);
+        fetchDocuments();
+    }, [fetchDocuments]);
 
     const handleUpload = async (e) => {
         e.preventDefault();
@@ -49,7 +49,7 @@ export default function Documents({ user, token }) {
             }
         } catch(err) {
             console.error(err);
-            setStatus({ type: 'error', message: 'Network error occurred' });
+            setStatus({ type: 'error', message: 'Network error. Please check your connection and try again.' });
         }
     };
 
@@ -70,6 +70,12 @@ export default function Documents({ user, token }) {
                 <h1>Company Documents</h1>
                 <p>Central repository for policies, handbooks, and onboarding materials.</p>
             </div>
+
+            {loadError && (
+                <div style={{ padding: '1rem', marginBottom: '1rem', borderRadius: '8px', backgroundColor: '#fde8e8', color: '#9b1c1c' }}>
+                    {loadError}
+                </div>
+            )}
 
             {user.role === 'admin' && (
                 <div className="card" style={{ marginBottom: '1.5rem', backgroundColor: 'var(--bg-main)' }}>

@@ -7,12 +7,18 @@ export default function Requests({ token }) {
     const [title, setTitle] = useState('');
     const [type, setType] = useState('IT Support');
     const [filter, setFilter] = useState('All');
+    const [status, setStatus] = useState({ type: '', message: '' });
+    const [loadError, setLoadError] = useState('');
 
     useEffect(() => {
+        setLoadError('');
         api.get('/api/requests', token)
             .then(res => res.json())
             .then(data => setRequests(data))
-            .catch(err => console.error(err));
+            .catch(err => {
+                console.error(err);
+                setLoadError('Failed to load requests');
+            });
     }, [token]);
 
     const filteredRequests = filter === 'All' 
@@ -29,14 +35,18 @@ export default function Requests({ token }) {
         };
         
         try {
+            setStatus({ type: 'info', message: 'Submitting request...' });
             const res = await api.post('/api/requests', payload, token);
             const newRequest = await res.json();
             setRequests([newRequest, ...requests]);
             setShowForm(false);
             setTitle('');
             setType('IT Support');
+            setStatus({ type: 'success', message: 'Request submitted successfully!' });
+            setTimeout(() => setStatus({ type: '', message: '' }), 3000);
         } catch(err) {
             console.error('Failed to submit request', err);
+            setStatus({ type: 'error', message: 'Failed to submit request. Please try again.' });
         }
     };
 
@@ -46,6 +56,18 @@ export default function Requests({ token }) {
                 <h1>Internal Requests & Tickets</h1>
                 <p>Submit and track your requests</p>
             </div>
+
+            {loadError && (
+                <div style={{ padding: '1rem', marginBottom: '1rem', borderRadius: '8px', backgroundColor: '#fde8e8', color: '#9b1c1c' }}>
+                    {loadError}
+                </div>
+            )}
+
+            {status.message && (
+                <div style={{ padding: '1rem', marginBottom: '1rem', borderRadius: '8px', backgroundColor: status.type === 'success' ? '#def7ec' : status.type === 'error' ? '#fde8e8' : '#e1effe', color: status.type === 'success' ? '#03543f' : status.type === 'error' ? '#9b1c1c' : '#1e429f' }}>
+                    {status.message}
+                </div>
+            )}
 
             <div className="stats-grid">
                 <div className="stat-card">

@@ -57,7 +57,14 @@ const limiter = rateLimit({
     max: 100, // limit each IP to 100 requests per windowMs
     message: 'Too many requests from this IP, please try again after 15 minutes'
 });
-app.use('/api/', limiter);
+// Apply limiter to all /api/ routes except login endpoints (no limit on login attempts)
+app.use('/api/', (req, res, next) => {
+    // Skip rate limiting for login endpoints to allow unlimited login attempts
+    if (req.path === '/auth/login' || req.path === '/auth/2fa/login') {
+        return next();
+    }
+    limiter(req, res, next);
+});
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 10,

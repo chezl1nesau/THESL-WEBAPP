@@ -39,8 +39,10 @@ const ATTENDANCE_DATA = [
 
 function CompanyCalendar({ token }) {
     const [events, setEvents] = useState([]);
+    const [error, setError] = useState('');
 
     useEffect(() => {
+        setError('');
         api.get('/api/calendar', token)
             .then(res => res.json())
             .then(data => {
@@ -56,12 +58,20 @@ function CompanyCalendar({ token }) {
                     setEvents([]);
                 }
             })
-            .catch(err => console.error(err));
+            .catch(err => {
+                console.error(err);
+                setError('Failed to load calendar');
+            });
     }, [token]);
 
     return (
         <div className="card" style={{ marginBottom: '1.5rem', marginTop: '1.5rem' }}>
             <h3 className="card-title" style={{ marginBottom: '1.5rem' }}>Company Event Calendar</h3>
+            {error && (
+                <div style={{ padding: '1rem', marginBottom: '1rem', borderRadius: '8px', backgroundColor: '#fde8e8', color: '#9b1c1c' }}>
+                    {error}
+                </div>
+            )}
             <div style={{ height: '450px' }}>
                 <Calendar
                     localizer={localizer}
@@ -186,8 +196,11 @@ function EmployeeDashboard({ user }) {
 
 export function ManagementDashboard({ token }) {
     const [pending, setPending] = useState([]);
+    const [error, setError] = useState('');
+    const [status, setStatus] = useState({ type: '', message: '' });
 
     useEffect(() => {
+        setError('');
         api.get('/api/admin/pending', token)
             .then(res => res.json())
             .then(data => {
@@ -198,18 +211,27 @@ export function ManagementDashboard({ token }) {
                     setPending([]);
                 }
             })
-            .catch(err => console.error(err));
+            .catch(err => {
+                console.error(err);
+                setError('Failed to load pending approvals');
+            });
     }, [token]);
 
     const handleAction = async (id, action) => {
+        setStatus({ type: 'info', message: 'Processing...' });
         try {
             const res = await api.post('/api/admin/action', { id, action }, token);
             const data = await res.json();
             if (data.success) {
                 setPending(data.pendingApprovals);
+                setStatus({ type: 'success', message: 'Action completed successfully!' });
+                setTimeout(() => setStatus({ type: '', message: '' }), 3000);
+            } else {
+                setStatus({ type: 'error', message: 'Action failed' });
             }
         } catch(err) {
             console.error('Failed to process action', err);
+            setStatus({ type: 'error', message: 'Network error. Please try again.' });
         }
     };
 
@@ -219,6 +241,18 @@ export function ManagementDashboard({ token }) {
                 <h1>Management Dashboard</h1>
                 <p>Manage employees and approvals</p>
             </div>
+
+            {error && (
+                <div style={{ padding: '1rem', marginBottom: '1rem', borderRadius: '8px', backgroundColor: '#fde8e8', color: '#9b1c1c' }}>
+                    {error}
+                </div>
+            )}
+
+            {status.message && (
+                <div style={{ padding: '1rem', marginBottom: '1rem', borderRadius: '8px', backgroundColor: status.type === 'success' ? '#def7ec' : status.type === 'error' ? '#fde8e8' : '#e1effe', color: status.type === 'success' ? '#03543f' : status.type === 'error' ? '#9b1c1c' : '#1e429f' }}>
+                    {status.message}
+                </div>
+            )}
 
             <div className="stats-grid">
                 <div className="stat-card">

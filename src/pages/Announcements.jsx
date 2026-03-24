@@ -4,12 +4,17 @@ import { api } from '../utils/api';
 export default function Announcements({ token }) {
     const [announcements, setAnnouncements] = useState([]);
     const [filter, setFilter] = useState('all');
+    const [loadError, setLoadError] = useState('');
 
     useEffect(() => {
+        setLoadError('');
         api.get('/api/announcements', token)
             .then(res => res.json())
             .then(data => setAnnouncements(data))
-            .catch(err => console.error(err));
+            .catch(err => {
+                console.error(err);
+                setLoadError('Failed to load announcements');
+            });
     }, [token]);
 
     const filteredAnnouncements = filter === 'all' 
@@ -22,6 +27,12 @@ export default function Announcements({ token }) {
                 <h1>Company Announcements</h1>
                 <p>Stay updated with the latest company news and events</p>
             </div>
+
+            {loadError && (
+                <div style={{ padding: '1rem', marginBottom: '1rem', borderRadius: '8px', backgroundColor: '#fde8e8', color: '#9b1c1c' }}>
+                    {loadError}
+                </div>
+            )}
 
             <div className="card">
                 <div className="filter-buttons">
