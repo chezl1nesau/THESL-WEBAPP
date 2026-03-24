@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS two_factor_secrets (
 -- =======================
 INSERT INTO users (email, password, role, name, annual_balance, sick_balance) 
 VALUES 
-    ('admin@thesl.co.za', '$2a$10$YourHashedPasswordHere', 'admin', 'Admin User', 15, 10),
-    ('chezlin@thesl.co.za', '$2a$10$YourHashedPasswordHere', 'admin', 'Chezlin', 15, 10),
-    ('employee@thesl.co.za', '$2a$10$YourHashedPasswordHere', 'employee', 'Sample Employee', 12, 8)
+    ('admin@thesl.co.za', '$2b$10$f.YdyPGh1d1cFgKFDCF//..G0Sgdqs93qlJHlvZME7h03o..yXUc.', 'admin', 'Admin User', 15, 10),
+    ('chezlin@thesl.co.za', '$2b$10$f.YdyPGh1d1cFgKFDCF//..G0Sgdqs93qlJHlvZME7h03o..yXUc.', 'admin', 'Chezlin', 15, 10),
+    ('employee@thesl.co.za', '$2b$10$f.YdyPGh1d1cFgKFDCF//..G0Sgdqs93qlJHlvZME7h03o..yXUc.', 'employee', 'Sample Employee', 12, 8)
 ON CONFLICT DO NOTHING;
