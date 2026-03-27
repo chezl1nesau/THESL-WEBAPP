@@ -42,8 +42,8 @@ const LEAVE_DATA = [
 ];
 
 const ATTENDANCE_DATA = [
-    { name: 'Present', value: 38, color: '#bff368' },
-    { name: 'On Leave', value: 3, color: '#3b82f6' },
+    { name: 'Present', value: 22, color: '#bff368' },
+    { name: 'On Leave', value: 2, color: '#3b82f6' },
     { name: 'Sick', value: 1, color: '#ef4444' },
 ];
 
@@ -110,7 +110,17 @@ function CompanyCalendar({ token }) {
     );
 }
 
-function EmployeeDashboard({ user }) {
+function EmployeeDashboard({ user, token }) {
+    const [balances, setBalances] = useState({ annual_balance: 15, sick_balance: 10 });
+    
+    useEffect(() => {
+        if (!token) return;
+        api.get(`/api/user/balances?email=${user.email}`, token)
+            .then(res => res.json())
+            .then(data => setBalances(data))
+            .catch(console.error);
+    }, [user.email, token]);
+
     return (
         <>
             <div className="page-header">
@@ -124,7 +134,7 @@ function EmployeeDashboard({ user }) {
                         <div className="stat-label">Annual Leave</div>
                         <Palmtree size={20} color="var(--accent)" />
                     </div>
-                    <div className="stat-value">12 Days</div>
+                    <div className="stat-value">{balances.annual_balance} Days</div>
                     <div className="stat-subtitle">Remaining this year</div>
                 </div>
                 <div className="stat-card">
@@ -132,7 +142,7 @@ function EmployeeDashboard({ user }) {
                         <div className="stat-label">Sick Leave</div>
                         <Stethoscope size={20} color="#fb7185" />
                     </div>
-                    <div className="stat-value">8 Days</div>
+                    <div className="stat-value">{balances.sick_balance} Days</div>
                     <div className="stat-subtitle">Remaining this year</div>
                 </div>
                 <div className="stat-card">
@@ -282,8 +292,8 @@ export function ManagementDashboard({ token }) {
                         <div className="stat-label">Total Employees</div>
                         <Users size={20} color="var(--accent)" />
                     </div>
-                    <div className="stat-value">42</div>
-                    <div className="stat-subtitle">Across all departments</div>
+                    <div className="stat-value">25</div>
+                    <div className="stat-subtitle">Across all teams</div>
                 </div>
                 <div className="stat-card">
                     <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
@@ -306,8 +316,8 @@ export function ManagementDashboard({ token }) {
                         <div className="stat-label">Present</div>
                         <Activity size={20} color="#34d399" />
                     </div>
-                    <div className="stat-value">38</div>
-                    <div className="stat-subtitle">90% attendance today</div>
+                    <div className="stat-value">22</div>
+                    <div className="stat-subtitle">On duty today</div>
                 </div>
             </div>
 
@@ -388,7 +398,7 @@ export function ManagementDashboard({ token }) {
 export default function Dashboard({ user, token }) {
     return (
         <div style={{ paddingBottom: '2rem' }}>
-            {user.role === 'admin' || user.role === 'manager' ? <ManagementDashboard token={token} /> : <EmployeeDashboard user={user} />}
+            {user.role === 'admin' || user.role === 'manager' ? <ManagementDashboard token={token} /> : <EmployeeDashboard user={user} token={token} />}
             <CompanyCalendar token={token} />
         </div>
     );
