@@ -155,3 +155,5 @@ vite.config.ts.timestamp-*
 # SQLite Database
 server/database.sqlite
 server/database.sqlite-journal
+.vercel
+.env*.local

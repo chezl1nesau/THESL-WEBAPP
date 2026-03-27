@@ -11,7 +11,7 @@ const onRefreshed = (token) => {
 };
 
 // Get API base URL from environment or use relative paths
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || '';
 
 // Retry logic helper with exponential backoff
 const fetchWithRetry = async (fullUrl, options, maxRetries = 3) => {
