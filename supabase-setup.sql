@@ -126,7 +126,25 @@ CREATE TABLE IF NOT EXISTS documents (
     title TEXT,
     filename TEXT,
     size INTEGER,
-    uploadDate TEXT
+    date TEXT,
+    category TEXT DEFAULT 'General',
+    uploaded_by TEXT,
+    original_name TEXT
+);
+
+-- =======================
+-- Create Compliments Table
+-- =======================
+CREATE TABLE IF NOT EXISTS compliments (
+    id BIGSERIAL PRIMARY KEY,
+    recipient_email TEXT,
+    recipient_name TEXT,
+    given_by TEXT,
+    given_by_email TEXT,
+    category TEXT,
+    message TEXT,
+    bonus_amount NUMERIC,
+    date TEXT
 );
 
 -- =======================

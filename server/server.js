@@ -93,25 +93,30 @@ const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => {
         const ext = path.extname(file.originalname || '').toLowerCase();
-        const safeExt = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg'].includes(ext) ? ext : '';
+        const safeExts = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.xlsx', '.xls', '.csv'];
+        const safeExt = safeExts.includes(ext) ? ext : '';
         cb(null, `${Date.now()}-${crypto.randomUUID()}${safeExt}`);
     }
 });
 const upload = multer({
     storage,
-    limits: { fileSize: 10 * 1024 * 1024 },
+    limits: { fileSize: 20 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const allowedMimeTypes = new Set([
             'application/pdf',
             'application/msword',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             'image/png',
-            'image/jpeg'
+            'image/jpeg',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-excel',
+            'text/csv',
+            'application/csv'
         ]);
         const ext = path.extname(file.originalname || '').toLowerCase();
-        const allowedExtensions = new Set(['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg']);
-        if (!allowedMimeTypes.has(file.mimetype) || !allowedExtensions.has(ext)) {
-            return cb(new Error('Invalid file type'));
+        const allowedExtensions = new Set(['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.xlsx', '.xls', '.csv']);
+        if (!allowedExtensions.has(ext)) {
+            return cb(new Error('Invalid file type. Allowed: PDF, Word, Excel, CSV, images'));
         }
         return cb(null, true);
     }
@@ -939,7 +944,7 @@ app.put('/api/performance/manager', authenticateToken, isManager, [
 app.post('/api/documents/upload', authenticateToken, (req, res) => {
     upload.single('file')(req, res, async (uploadErr) => {
         if (uploadErr instanceof multer.MulterError && uploadErr.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({ success: false, message: 'File exceeds 10MB size limit' });
+            return res.status(400).json({ success: false, message: 'File exceeds 20MB size limit' });
         }
         if (uploadErr) {
             return res.status(400).json({ success: false, message: uploadErr.message || 'Invalid file upload' });
@@ -951,10 +956,16 @@ app.post('/api/documents/upload', authenticateToken, (req, res) => {
         if (!title) {
             return res.status(400).json({ success: false, message: 'Title is required' });
         }
-        const { filename, size } = req.file;
+        const category = typeof req.body.category === 'string' ? req.body.category.trim().slice(0, 60) : 'General';
+        const { filename, size, originalname } = req.file;
+        const ext = path.extname(originalname || '').toLowerCase();
         const date = new Date().toLocaleDateString('en-US');
+        const uploaded_by = req.user.name || req.user.email;
         try {
-            await db.run('INSERT INTO documents (title, filename, size, date) VALUES (?, ?, ?, ?)', [title, filename, size, date]);
+            await db.run(
+                'INSERT INTO documents (title, filename, size, date, category, uploaded_by, original_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [title, filename, size, date, category, uploaded_by, originalname]
+            );
             logAudit(req.user.email, 'DOCUMENT_UPLOAD', `Uploaded document: ${title} (${filename})`);
             res.json({ success: true });
         } catch (err) {
@@ -975,13 +986,77 @@ app.get('/api/documents', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/documents/download/:filename', authenticateToken, (req, res) => {
-    const filepath = path.join(uploadDir, req.params.filename);
+    const safeFilename = path.basename(req.params.filename);
+    const filepath = path.join(uploadDir, safeFilename);
     if (fs.existsSync(filepath)) {
-        logAudit(req.user.email, 'DOCUMENT_DOWNLOAD', `Downloaded document: ${req.params.filename}`);
+        logAudit(req.user.email, 'DOCUMENT_DOWNLOAD', `Downloaded document: ${safeFilename}`);
         res.download(filepath);
     } else {
-        logAudit(req.user.email, 'DOCUMENT_DOWNLOAD_FAILURE', `Attempted to download non-existent document: ${req.params.filename}`);
+        logAudit(req.user.email, 'DOCUMENT_DOWNLOAD_FAILURE', `Attempted to download non-existent document: ${safeFilename}`);
         res.status(404).json({ success: false, message: 'File not found' });
+    }
+});
+
+app.delete('/api/documents/:id', authenticateToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const doc = await db.get('SELECT * FROM documents WHERE id = ?', [id]);
+        if (!doc) return res.status(404).json({ success: false, message: 'Document not found' });
+        const filepath = path.join(uploadDir, doc.filename);
+        if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+        await db.run('DELETE FROM documents WHERE id = ?', [id]);
+        logAudit(req.user.email, 'DOCUMENT_DELETE', `Deleted document: ${doc.title} (${doc.filename})`);
+        res.json({ success: true });
+    } catch (err) {
+        logAudit(req.user.email, 'DOCUMENT_DELETE_FAILURE', `Error deleting document ID ${id}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+// 13. Compliments (Performance-based Commission)
+app.get('/api/compliments', authenticateToken, async (req, res) => {
+    try {
+        const rows = await db.all('SELECT * FROM compliments ORDER BY id DESC');
+        res.json(rows);
+    } catch (err) {
+        logAudit(req.user?.email || 'public', 'COMPLIMENT_VIEW_FAILURE', `Error viewing compliments: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+app.post('/api/compliments', authenticateToken, isManager, [
+    body('recipient_email').isEmail().normalizeEmail(),
+    body('recipient_name').notEmpty().trim().escape(),
+    body('category').isIn(['Sales Achievement', 'Client Satisfaction', 'Team Leadership', 'Innovation', 'Above & Beyond', 'Perfect Attendance', 'Top Performer']).withMessage('Invalid category'),
+    body('message').notEmpty().trim().escape(),
+    body('bonus_amount').optional({ nullable: true }).isFloat({ min: 0 }).withMessage('Bonus must be a positive number'),
+    validate
+], async (req, res) => {
+    const { recipient_email, recipient_name, category, message, bonus_amount } = req.body;
+    const given_by = req.user.name || req.user.email;
+    const given_by_email = req.user.email;
+    const date = new Date().toLocaleDateString('en-US');
+    try {
+        const result = await db.run(
+            'INSERT INTO compliments (recipient_email, recipient_name, given_by, given_by_email, category, message, bonus_amount, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [recipient_email, recipient_name, given_by, given_by_email, category, message, bonus_amount || null, date]
+        );
+        logAudit(req.user.email, 'COMPLIMENT_CREATE', `Gave compliment to ${recipient_email}: ${category}`);
+        res.json({ success: true, id: result.lastID });
+    } catch (err) {
+        logAudit(req.user.email, 'COMPLIMENT_CREATE_FAILURE', `Error creating compliment: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+app.delete('/api/compliments/:id', authenticateToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.run('DELETE FROM compliments WHERE id = ?', [id]);
+        logAudit(req.user.email, 'COMPLIMENT_DELETE', `Deleted compliment ID ${id}`);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'Database error' });
     }
 });
 

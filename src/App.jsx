@@ -12,6 +12,7 @@ import Requests from './pages/Requests';
 import Profile from './pages/Profile';
 import Performance from './pages/Performance';
 import Documents from './pages/Documents';
+import Compliments from './pages/Compliments';
 import CalendarPage from './pages/CalendarPage';
 import UserManagement from './pages/UserManagement';
 import ForgotPassword from './pages/ForgotPassword';
@@ -45,6 +46,7 @@ function AuthenticatedApp({ user, setUser, token, onLogout }) {
                 <Route path="requests" element={<PageWrapper><Requests user={user} token={token} /></PageWrapper>} />
                 <Route path="performance" element={<PageWrapper><Performance user={user} token={token} /></PageWrapper>} />
                 <Route path="documents" element={<PageWrapper><Documents user={user} token={token} /></PageWrapper>} />
+                <Route path="compliments" element={<PageWrapper><Compliments user={user} token={token} /></PageWrapper>} />
                 <Route path="calendar" element={<PageWrapper><CalendarPage user={user} token={token} /></PageWrapper>} />
                 <Route path="users" element={user.role === 'admin' ? <PageWrapper><UserManagement token={token} /></PageWrapper> : <Navigate to="/dashboard" />} />
                 <Route path="profile" element={<PageWrapper><Profile user={user} setUser={setUser} token={token} /></PageWrapper>} />

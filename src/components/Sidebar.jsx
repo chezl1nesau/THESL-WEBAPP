@@ -9,7 +9,8 @@ import {
     Stethoscope, 
     Clock, 
     FileClock, 
-    TrendingUp, 
+    TrendingUp,
+    Award,
     User, 
     ShieldCheck, 
     Users,
@@ -29,6 +30,7 @@ export default function Sidebar({ user, onLogout, isOpen, onToggle }) {
         { id: 'lateness', label: 'Lateness', icon: Clock, path: '/lateness' },
         { id: 'requests', label: 'Requests', icon: FileClock, path: '/requests' },
         { id: 'performance', label: 'Performance', icon: TrendingUp, path: '/performance' },
+        { id: 'compliments', label: 'Compliments', icon: Award, path: '/compliments' },
         { id: 'profile', label: 'Profile', icon: User, path: '/profile' },
     ];
 
