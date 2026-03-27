@@ -8,6 +8,16 @@ import {
     LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
     Tooltip, ResponsiveContainer, AreaChart, Area, Cell, PieChart, Pie
 } from 'recharts';
+import { 
+    Palmtree, 
+    Stethoscope, 
+    Clock, 
+    FileClock, 
+    Users, 
+    ShieldCheck, 
+    LifeBuoy, 
+    Activity 
+} from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
 const locales = {
@@ -110,22 +120,34 @@ function EmployeeDashboard({ user }) {
 
             <div className="stats-grid">
                 <div className="stat-card">
-                    <div className="stat-label">Annual Leave Remaining</div>
+                    <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <div className="stat-label">Annual Leave</div>
+                        <Palmtree size={20} color="var(--accent)" />
+                    </div>
                     <div className="stat-value">12 Days</div>
                     <div className="stat-subtitle">Remaining this year</div>
                 </div>
                 <div className="stat-card">
-                    <div className="stat-label">Sick Leave Remaining</div>
+                    <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <div className="stat-label">Sick Leave</div>
+                        <Stethoscope size={20} color="#fb7185" />
+                    </div>
                     <div className="stat-value">8 Days</div>
                     <div className="stat-subtitle">Remaining this year</div>
                 </div>
                 <div className="stat-card">
-                    <div className="stat-label">Late Instances</div>
+                    <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <div className="stat-label">Late Instances</div>
+                        <Clock size={20} color="#facc15" />
+                    </div>
                     <div className="stat-value">2</div>
                     <div className="stat-subtitle">This month</div>
                 </div>
                 <div className="stat-card">
-                    <div className="stat-label">Open Requests</div>
+                    <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <div className="stat-label">Open Requests</div>
+                        <FileClock size={20} color="#60a5fa" />
+                    </div>
                     <div className="stat-value">1</div>
                     <div className="stat-subtitle">Pending approval</div>
                 </div>
@@ -256,24 +278,36 @@ export function ManagementDashboard({ token }) {
 
             <div className="stats-grid">
                 <div className="stat-card">
-                    <div className="stat-label">Total Employees</div>
+                    <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <div className="stat-label">Total Employees</div>
+                        <Users size={20} color="var(--accent)" />
+                    </div>
                     <div className="stat-value">42</div>
                     <div className="stat-subtitle">Across all departments</div>
                 </div>
                 <div className="stat-card">
-                    <div className="stat-label">Pending Approvals</div>
+                    <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <div className="stat-label">Approvals</div>
+                        <ShieldCheck size={20} color="#60a5fa" />
+                    </div>
                     <div className="stat-value">{pending.length}</div>
                     <div className="stat-subtitle">Awaiting action</div>
                 </div>
                 <div className="stat-card">
-                    <div className="stat-label">Open Tickets</div>
+                    <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <div className="stat-label">Open Tickets</div>
+                        <LifeBuoy size={20} color="#fb7185" />
+                    </div>
                     <div className="stat-value">5</div>
                     <div className="stat-subtitle">Support requests</div>
                 </div>
                 <div className="stat-card">
-                    <div className="stat-label">Present Today</div>
+                    <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <div className="stat-label">Present</div>
+                        <Activity size={20} color="#34d399" />
+                    </div>
                     <div className="stat-value">38</div>
-                    <div className="stat-subtitle">90% attendance</div>
+                    <div className="stat-subtitle">90% attendance today</div>
                 </div>
             </div>
 

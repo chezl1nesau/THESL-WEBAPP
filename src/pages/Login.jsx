@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ShieldCheck, Mail, Lock, ArrowRight } from 'lucide-react';
 
 export default function Login({ onLogin }) {
     const [email, setEmail] = useState('');
@@ -78,45 +78,61 @@ export default function Login({ onLogin }) {
                     <form onSubmit={handleSubmit}>
                         <div className="form-group">
                             <label>Email Address</label>
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="name@company.com"
-                                required
-                                disabled={isLoading}
-                            />
+                            <div style={{ position: 'relative' }}>
+                                <Mail size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
+                                <input
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    placeholder="name@company.com"
+                                    required
+                                    disabled={isLoading}
+                                    style={{ paddingLeft: '42px' }}
+                                />
+                            </div>
                         </div>
                         <div className="form-group">
                             <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 Password
-                                <Link to="/forgot-password" style={{ color: 'var(--accent-light)', fontSize: '0.75rem', textDecoration: 'none' }}>Forgot Password?</Link>
+                                <Link to="/forgot-password" style={{ color: 'var(--accent)', fontSize: '0.75rem', textDecoration: 'none' }}>Forgot?</Link>
                             </label>
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                placeholder="Enter your password"
-                                required
-                                disabled={isLoading}
-                            />
+                            <div style={{ position: 'relative' }}>
+                                <Lock size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    placeholder="Enter your password"
+                                    required
+                                    disabled={isLoading}
+                                    style={{ paddingLeft: '42px' }}
+                                />
+                            </div>
                         </div>
-                        <button type="submit" className="btn btn-primary" style={{width: '100%', marginTop: '1rem'}} disabled={isLoading}>
-                            {isLoading ? 'Signing In...' : 'Sign In'}
+                        <button type="submit" className="btn btn-primary" style={{width: '100%', marginTop: '1rem', justifyContent: 'center'}} disabled={isLoading}>
+                            {isLoading ? 'Signing In...' : (
+                                <>
+                                    <span>Sign In</span>
+                                    <ArrowRight size={18} />
+                                </>
+                            )}
                         </button>
-                        <div style={{ textAlign: 'center', marginTop: '1rem' }}>
-                            <Link to="/forgot-password" style={{ color: 'var(--text-light)', fontSize: '0.875rem', textDecoration: 'none' }}>
-                                Forgot your password?
-                            </Link>
-                        </div>
                     </form>
                 ) : (
                     <form onSubmit={handleSubmit}>
                         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🛡️</div>
-                            <h3 style={{ color: 'white', marginBottom: '0.5rem' }}>Two-Factor Auth</h3>
+                            <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'center' }}>
+                                <div style={{ 
+                                    width: 64, height: 64, borderRadius: '20px', 
+                                    background: 'rgba(191, 243, 104, 0.1)', 
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                                }}>
+                                    <ShieldCheck size={32} color="var(--accent)" />
+                                </div>
+                            </div>
+                            <h3 style={{ color: 'white', marginBottom: '0.5rem', fontFamily: 'Outfit' }}>Two-Factor Auth</h3>
                             <p style={{ fontSize: '0.875rem', color: 'var(--text-light)' }}>
-                                Enter the 6-digit code from your authenticator app.
+                                Enter the 6-digit code from your app.
                             </p>
                         </div>
                         <div className="form-group">
@@ -128,14 +144,14 @@ export default function Login({ onLogin }) {
                                 maxLength={6}
                                 required
                                 disabled={isLoading}
-                                style={{ textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.3em' }}
+                                style={{ textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.3em', background: 'rgba(255,255,255,0.05)' }}
                                 autoFocus
                             />
                         </div>
-                        <button type="submit" className="btn btn-primary" style={{width: '100%', marginTop: '1rem'}} disabled={isLoading}>
+                        <button type="submit" className="btn btn-primary" style={{width: '100%', marginTop: '1rem', justifyContent: 'center'}} disabled={isLoading}>
                             {isLoading ? 'Verifying...' : 'Verify & Sign In'}
                         </button>
-                        <button type="button" className="btn btn-link" style={{ width: '100%', marginTop: '1rem', color: 'var(--text-light)', fontSize: '0.875rem' }} onClick={() => setMfaRequired(false)}>
+                        <button type="button" className="btn btn-link" style={{ width: '100%', marginTop: '1rem', color: 'var(--text-light)', fontSize: '0.875rem', background: 'transparent', border: 'none' }} onClick={() => setMfaRequired(false)}>
                             Back to Login
                         </button>
                     </form>
