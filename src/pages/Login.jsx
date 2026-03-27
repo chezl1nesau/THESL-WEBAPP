@@ -15,7 +15,7 @@ export default function Login({ onLogin }) {
         setIsLoading(true);
         setError('');
 
-        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+        const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://thesl-backend.onrender.com';
 
         try {
             const endpoint = mfaRequired ? '/api/auth/2fa/login' : '/api/auth/login';
