@@ -17,31 +17,41 @@ import UserManagement from './pages/UserManagement';
 import ForgotPassword from './pages/ForgotPassword';
 import './index.css';
 
-function MainContent({ user, setUser, token, currentPage }) {
+function PageWrapper({ children }) {
     return (
         <div className="main-content">
-            {currentPage === 'dashboard' && <Dashboard user={user} token={token} />}
-            {currentPage === 'announcements' && <Announcements user={user} token={token} />}
-            {currentPage === 'annual-leave' && <AnnualLeave user={user} token={token} />}
-            {currentPage === 'sick-leave' && <SickLeave user={user} token={token} />}
-            {currentPage === 'lateness' && <LatenessTracker user={user} token={token} />}
-            {currentPage === 'requests' && <Requests user={user} token={token} />}
-            {currentPage === 'performance' && <Performance user={user} token={token} />}
-            {currentPage === 'documents' && <Documents user={user} token={token} />}
-            {currentPage === 'calendar' && <CalendarPage user={user} token={token} />}
-            {currentPage === 'users' && user.role === 'admin' && <UserManagement token={token} />}
-            {currentPage === 'profile' && <Profile user={user} setUser={setUser} token={token} />}
-            {currentPage === 'admin' && user.role === 'admin' && <ManagementDashboard token={token} />}
+            {children}
         </div>
     );
 }
 
 function AuthenticatedApp({ user, setUser, token, onLogout }) {
-    const [currentPage, setCurrentPage] = useState('dashboard');
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    
     return (
         <div style={{ display: 'flex' }}>
-            <Sidebar user={user} currentPage={currentPage} onNavigate={setCurrentPage} onLogout={onLogout} />
-            <MainContent user={user} setUser={setUser} token={token} currentPage={currentPage} />
+            <Sidebar 
+                user={user} 
+                onLogout={onLogout} 
+                isOpen={isSidebarOpen} 
+                onToggle={() => setIsSidebarOpen(!isSidebarOpen)} 
+            />
+            <Routes>
+                <Route path="dashboard" element={<PageWrapper><Dashboard user={user} token={token} /></PageWrapper>} />
+                <Route path="announcements" element={<PageWrapper><Announcements user={user} token={token} /></PageWrapper>} />
+                <Route path="annual-leave" element={<PageWrapper><AnnualLeave user={user} token={token} /></PageWrapper>} />
+                <Route path="sick-leave" element={<PageWrapper><SickLeave user={user} token={token} /></PageWrapper>} />
+                <Route path="lateness" element={<PageWrapper><LatenessTracker user={user} token={token} /></PageWrapper>} />
+                <Route path="requests" element={<PageWrapper><Requests user={user} token={token} /></PageWrapper>} />
+                <Route path="performance" element={<PageWrapper><Performance user={user} token={token} /></PageWrapper>} />
+                <Route path="documents" element={<PageWrapper><Documents user={user} token={token} /></PageWrapper>} />
+                <Route path="calendar" element={<PageWrapper><CalendarPage user={user} token={token} /></PageWrapper>} />
+                <Route path="users" element={user.role === 'admin' ? <PageWrapper><UserManagement token={token} /></PageWrapper> : <Navigate to="/dashboard" />} />
+                <Route path="profile" element={<PageWrapper><Profile user={user} setUser={setUser} token={token} /></PageWrapper>} />
+                <Route path="admin" element={user.role === 'admin' ? <PageWrapper><ManagementDashboard token={token} /></PageWrapper> : <Navigate to="/dashboard" />} />
+                <Route index element={<Navigate to="dashboard" />} />
+                <Route path="*" element={<Navigate to="dashboard" />} />
+            </Routes>
         </div>
     );
 }
@@ -78,7 +88,7 @@ function App() {
             <Route path="/login" element={
                 currentUser ? <Navigate to="/" /> : <Login onLogin={handleLogin} />
             } />
-            <Route path="/" element={
+            <Route path="/*" element={
                 currentUser ? (
                     <AuthenticatedApp user={currentUser} setUser={handleLogin} token={authToken} onLogout={handleLogout} />
                 ) : (

@@ -81,10 +81,27 @@ export const apiFetch = async (url, options = {}, token = null) => {
                 isRefreshing = false;
                 onRefreshed(data.token);
                 return apiFetch(url, { ...options, _retry: true }, data.token);
+            } else {
+                // If refresh specifically fails, clear EVERYTHING and force relogin
+                localStorage.removeItem('thesl_hr_token');
+                localStorage.removeItem('thesl_hr_user');
+                window.location.reload();
             }
-        } catch {
+        } catch (err) {
             isRefreshing = false;
+            // Network error during refresh or other failure
+            localStorage.removeItem('thesl_hr_token');
+            localStorage.removeItem('thesl_hr_user');
+            window.location.reload();
         }
+    }
+
+    // Handle 403 specifically if it's not a refresh issue (e.g. invalid permissions or genuinely invalid token)
+    if (response.status === 403) {
+        console.error('Session invalid - 403 Forbidden');
+        localStorage.removeItem('thesl_hr_token');
+        localStorage.removeItem('thesl_hr_user');
+        window.location.reload();
     }
 
     return response;
