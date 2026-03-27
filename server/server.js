@@ -129,11 +129,15 @@ let mailTransporterPromise = null;
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) return res.status(401).json({ success: false, message: 'Access denied. No token provided.' });
+    if (!token) {
+        return res.status(401).json({ success: false, message: 'No token provided' });
+    }
 
     jwt.verify(token, ACCESS_TOKEN_SECRET, (err, user) => {
-        if (err) return res.status(403).json({ success: false, message: 'Invalid or expired token.' });
+        if (err) {
+            console.error('JWT Verification Error:', err.message, 'Token received:', token ? token.substring(0, 15) + '...' : 'none');
+            return res.status(403).json({ success: false, message: 'Invalid or expired token.' });
+        }
         req.user = user;
         next();
     });
@@ -247,7 +251,7 @@ app.post('/api/auth/login', [
             const token = jwt.sign(
                 { email: user.email, role: user.role, name: user.name },
                 ACCESS_TOKEN_SECRET,
-                { expiresIn: '15m' }
+                { expiresIn: '24h' }
             );
 
             const refreshToken = jwt.sign(
@@ -311,7 +315,7 @@ app.post('/api/auth/2fa/login', [
             const token = jwt.sign(
                 { email: user.email, role: user.role, name: user.name },
                 ACCESS_TOKEN_SECRET,
-                { expiresIn: '15m' }
+                { expiresIn: '24h' }
             );
 
             logAudit(user.email, 'LOGIN_SUCCESS_MFA', `User logged in with MFA from ${req.ip}`);
@@ -475,7 +479,7 @@ app.post('/api/auth/refresh', (req, res) => {
             const newToken = jwt.sign(
                 { email: user.email, role: user.role, name: user.name },
                 ACCESS_TOKEN_SECRET,
-                { expiresIn: '15m' }
+                { expiresIn: '24h' }
             );
             logAudit(user.email, 'REFRESH_TOKEN_SUCCESS', `Access token refreshed from ${req.ip}`);
             res.json({ success: true, token: newToken });
