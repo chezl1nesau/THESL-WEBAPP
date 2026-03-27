@@ -990,7 +990,7 @@ app.get('/api/documents/download/:filename', authenticateToken, (req, res) => {
 // 11. User Management (Admin Only)
 app.get('/api/admin/users', authenticateToken, isAdmin, async (req, res) => {
     try {
-        const rows = await db.all('SELECT email, name, role, annual_balance, sick_balance, annual_used, sick_used, phone FROM users');
+        const rows = await db.all('SELECT email, name, role, team, annual_balance, sick_balance, annual_used, sick_used, phone FROM users');
         res.json(rows);
     } catch (err) {
         logAudit(req.user.email, 'ADMIN_USER_LIST_VIEW_FAILURE', `Error viewing admin user list: ${err.message}`);
@@ -1005,12 +1005,12 @@ app.post('/api/admin/users', authenticateToken, isAdmin, [
     body('role').isIn(['employee', 'manager', 'admin']),
     validate
 ], async (req, res) => {
-    const { email, password, name, role } = req.body;
+    const { email, password, name, role, team } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
     try {
         await db.run(
-            'INSERT INTO users (email, password, role, name) VALUES (?, ?, ?, ?)',
-            [email, hashedPassword, role, name]
+            'INSERT INTO users (email, password, role, name, team, annual_balance, sick_balance) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [email, hashedPassword, role, name, team || '', 15, 10]
         );
         logAudit(req.user.email, 'ADMIN_USER_CREATE', `Created user: ${email} with role ${role}`);
         res.json({ success: true });
@@ -1043,12 +1043,12 @@ app.put('/api/admin/users/:email', authenticateToken, isAdmin, [
     validate
 ], async (req, res) => {
     const { email } = req.params;
-    const { name, role, phone, annual_balance, sick_balance } = req.body;
+    const { name, role, phone, annual_balance, sick_balance, team } = req.body;
     try {
         const oldUser = await db.get('SELECT role FROM users WHERE email = ?', [email]);
         await db.run(
-            'UPDATE users SET name = ?, role = ?, phone = ?, annual_balance = ?, sick_balance = ? WHERE email = ?',
-            [name, role, phone, annual_balance, sick_balance, email]
+            'UPDATE users SET name = ?, role = ?, phone = ?, annual_balance = ?, sick_balance = ?, team = ? WHERE email = ?',
+            [name, role, phone, annual_balance, sick_balance, team || '', email]
         );
         
         if (oldUser && oldUser.role !== role) {

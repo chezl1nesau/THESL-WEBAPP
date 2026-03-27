@@ -12,8 +12,9 @@ export default function UserManagement({ token }) {
         password: '',
         role: 'employee',
         phone: '',
-        annual_balance: 12,
-        sick_balance: 8
+        annual_balance: 15,
+        sick_balance: 10,
+        team: ''
     });
     const [status, setStatus] = useState({ type: '', message: '' });
 
@@ -45,7 +46,8 @@ export default function UserManagement({ token }) {
             role: user.role,
             phone: user.phone || '',
             annual_balance: user.annual_balance,
-            sick_balance: user.sick_balance
+            sick_balance: user.sick_balance,
+            team: user.team || ''
         });
         setShowModal(true);
     };
@@ -58,8 +60,9 @@ export default function UserManagement({ token }) {
             password: '',
             role: 'employee',
             phone: '',
-            annual_balance: 12,
-            sick_balance: 8
+            annual_balance: 15,
+            sick_balance: 10,
+            team: ''
         });
         setShowModal(true);
     };
@@ -156,6 +159,7 @@ export default function UserManagement({ token }) {
                             <th style={{ textAlign: 'left', padding: '1rem' }}>Email</th>
                             <th style={{ textAlign: 'left', padding: '1rem' }}>Role</th>
                             <th style={{ textAlign: 'left', padding: '1rem' }}>Balances (A/S)</th>
+                            <th style={{ textAlign: 'left', padding: '1rem' }}>Team</th>
                             <th style={{ textAlign: 'right', padding: '1rem' }}>Actions</th>
                         </tr>
                     </thead>
@@ -182,6 +186,9 @@ export default function UserManagement({ token }) {
                                     </span>
                                 </td>
                                 <td style={{ padding: '1rem' }}>{user.annual_balance} / {user.sick_balance}</td>
+                                <td style={{ padding: '1rem' }}>
+                                    <span style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: 'rgba(191,243,104,0.1)', color: 'var(--accent)' }}>{user.team || '—'}</span>
+                                </td>
                                 <td style={{ padding: '1rem', textAlign: 'right' }}>
                                     <button className="btn btn-secondary" style={{ marginRight: '0.5rem', padding: '0.25rem 0.75rem' }} onClick={() => handleEdit(user)}>Edit</button>
                                     <button className="btn btn-outline" style={{ color: '#e02424', borderColor: '#f8d7da', padding: '0.25rem 0.75rem' }} onClick={() => handleDelete(user.email)}>Delete</button>
@@ -237,6 +244,20 @@ export default function UserManagement({ token }) {
                                     <option value="employee">Employee</option>
                                     <option value="manager">Manager</option>
                                     <option value="admin">Administrator</option>
+                                </select>
+                            </div>
+                            <div className="form-group">
+                                <label>Team</label>
+                                <select
+                                    value={formData.team}
+                                    onChange={e => setFormData({...formData, team: e.target.value})}
+                                    style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}
+                                >
+                                    <option value="">— Select Team —</option>
+                                    <option value="Requests">Requests</option>
+                                    <option value="Opens">Opens</option>
+                                    <option value="Settlements">Settlements</option>
+                                    <option value="Management">Management</option>
                                 </select>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
