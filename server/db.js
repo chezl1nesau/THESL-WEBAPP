@@ -38,18 +38,18 @@ async function queryToSupabase(query, type, params = []) {
         if (normalizedQuery.toUpperCase().startsWith('INSERT INTO')) {
             const tableMatch = normalizedQuery.match(/INSERT INTO\s+(\w+)/i);
             const columnsMatch = normalizedQuery.match(/\((.*?)\)\s*VALUES/i);
-            if (tableMatch && columnsMatch) {
-                const table = tableMatch[1];
-                const columns = columnsMatch[1].split(',').map(c => c.trim());
-                const values = {};
-                columns.forEach((col, i) => {
-                    values[col] = params[i];
-                });
-                const { data, error } = await supabase.from(table).insert([values]).select();
-                if (error) throw error;
-                const result = data?.[0] || {};
-                return { ...result, lastID: result.id };
-            }
+            if (!tableMatch || !columnsMatch) throw new Error('Could not parse INSERT query');
+            
+            const table = tableMatch[1];
+            const columns = columnsMatch[1].split(',').map(c => c.trim());
+            const values = {};
+            columns.forEach((col, i) => {
+                values[col] = params[i];
+            });
+            const { data, error } = await supabase.from(table).insert([values]).select();
+            if (error) throw error;
+            const result = data?.[0] || {};
+            return { ...result, lastID: result.id };
         }
 
         // SELECT query
@@ -61,14 +61,14 @@ async function queryToSupabase(query, type, params = []) {
             let queryBuilder = supabase.from(table).select('*');
 
             // Handle WHERE
-            const whereMatch = normalizedQuery.match(/WHERE\s+(.+?)(?:\s+ORDER BY|\s+LIMIT|$)/i);
+            const whereMatch = normalizedQuery.match(/WHERE\s+([\s\S]+?)(?:\s+ORDER BY|\s+LIMIT|$)/i);
             if (whereMatch) {
                 const whereClause = whereMatch[1];
                 const conditions = whereClause.split(/\s+AND\s+/i);
                 let paramOffset = 0;
                 for (const condition of conditions) {
                     const eqMatch = condition.match(/(\w+)\s*=\s*\?/i);
-                    const orMatch = condition.match(/(\w+)\s+IN\s+\((\?)\)/i); // Simplified IN
+                    const orMatch = condition.match(/(\w+)\s+IN\s+\((\?)\)/i);
                     if (eqMatch) {
                         queryBuilder = queryBuilder.eq(eqMatch[1], params[paramOffset++]);
                     }
@@ -76,7 +76,7 @@ async function queryToSupabase(query, type, params = []) {
             }
 
             // Handle ORDER BY
-            const orderMatch = normalizedQuery.match(/ORDER BY\s+(\w+)(?:\s+(ASC|DESC))?/i);
+            const orderMatch = normalizedQuery.match(/ORDER BY\s+([\w.]+)(?:\s+(ASC|DESC))?/i);
             if (orderMatch) {
                 queryBuilder = queryBuilder.order(orderMatch[1], { ascending: orderMatch[2]?.toUpperCase() !== 'DESC' });
             }
@@ -84,8 +84,8 @@ async function queryToSupabase(query, type, params = []) {
             // Handle LIMIT
             const limitMatch = normalizedQuery.match(/LIMIT\s+(\d+|\?)/i);
             if (limitMatch) {
-                const limit = limitMatch[1] === '?' ? params[params.length - 1] : parseInt(limitMatch[1]);
-                queryBuilder = queryBuilder.limit(limit);
+                const limitValue = limitMatch[1] === '?' ? params[params.length - 1] : parseInt(limitMatch[1]);
+                queryBuilder = queryBuilder.limit(limitValue);
             }
 
             const { data, error } = await queryBuilder;
@@ -100,8 +100,8 @@ async function queryToSupabase(query, type, params = []) {
         // UPDATE query
         if (normalizedQuery.toUpperCase().startsWith('UPDATE')) {
             const tableMatch = normalizedQuery.match(/UPDATE\s+(\w+)/i);
-            const setMatch = normalizedQuery.match(/SET\s+(.+?)\s+WHERE/i);
-            const whereMatch = normalizedQuery.match(/WHERE\s+(.+?)$/i);
+            const setMatch = normalizedQuery.match(/SET\s+([\s\S]+?)\s+WHERE/i);
+            const whereMatch = normalizedQuery.match(/WHERE\s+([\s\S]+?)$/i);
             
             if (tableMatch && setMatch && whereMatch) {
                 const table = tableMatch[1];
@@ -116,15 +116,6 @@ async function queryToSupabase(query, type, params = []) {
                     const match = part.match(/(\w+)\s*=\s*\?/);
                     if (match) {
                         updates[match[1]] = params[paramIndex++];
-                    } else {
-                        // Handle expressions like annual_balance = annual_balance - ?
-                        const exprMatch = part.match(/(\w+)\s*=\s*(\w+)\s*([-+])\s*\?/);
-                        if (exprMatch) {
-                            // Supabase doesn't support arithmetic easily for multiple fields in one go via PATCH
-                            // We would need to fetch first or use RPC.
-                            // For simplicity, let's assume atomic updates aren't strictly required or handle separately.
-                            console.warn('Arithmetic update detected. This wrapper needs to fetch first.');
-                        }
                     }
                 });
                 
@@ -146,7 +137,7 @@ async function queryToSupabase(query, type, params = []) {
         // DELETE query
         if (normalizedQuery.toUpperCase().startsWith('DELETE FROM')) {
             const tableMatch = normalizedQuery.match(/DELETE FROM\s+(\w+)/i);
-            const whereMatch = normalizedQuery.match(/WHERE\s+(.+?)$/i);
+            const whereMatch = normalizedQuery.match(/WHERE\s+([\s\S]+?)$/i);
             
             if (tableMatch && whereMatch) {
                 const table = tableMatch[1];
@@ -167,11 +158,12 @@ async function queryToSupabase(query, type, params = []) {
             }
         }
 
-        console.warn('Unsupported or unparsed query:', query);
+        console.warn('Unsupported query:', query);
         return type === 'single' ? null : [];
     } catch (err) {
-        console.error('Query error:', (err && err.message) || err);
-        return type === 'single' ? null : [];
+        console.error('Supabase Query Error:', err.message || err);
+        throw err; // Re-throw to be caught by server.js error handlers
     }
 }
+
 
