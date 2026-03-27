@@ -73,6 +73,17 @@ const authLimiter = rateLimit({
 app.use(cookieParser());
 app.use(bodyParser.json({ limit: '10mb' }));
 
+// Serve frontend static files
+const distPath = path.join(process.cwd(), 'dist');
+if (fs.existsSync(distPath)) {
+    app.use(express.static(distPath, {
+        maxAge: '1h',
+        setHeaders: (res, path) => {
+            if (path.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+        }
+    }));
+}
+
 const uploadDir = path.join(process.cwd(), 'server', 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -482,7 +493,7 @@ app.post('/api/auth/logout', (req, res) => {
 app.use('/api', authenticateToken);
 
 // Profile Update
-app.put('/api/user/profile', [
+app.put('/api/user/profile', authenticateToken, [
     body('email').isEmail().withMessage('Invalid email format').normalizeEmail(),
     body('name').notEmpty().withMessage('Name is required').trim().escape(),
     body('phone').optional().trim().escape(),
@@ -521,8 +532,26 @@ app.put('/api/user/profile', [
     }
 });
 
+// 1.2 User Profile
+app.get('/api/user/profile', authenticateToken, async (req, res) => {
+    const email = req.query.email || req.user.email;
+    // Security: Ensure users can only see their own profile if not admin
+    const targetEmail = req.user.role === 'admin' ? email : req.user.email;
+
+    try {
+        const user = await db.get('SELECT email, name, role, annual_balance, sick_balance, annual_used, sick_used, phone, avatar, two_factor_enabled FROM users WHERE email = ?', [targetEmail]);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        res.json({ success: true, user });
+    } catch (err) {
+        logAudit(req.user.email, 'PROFILE_VIEW_FAILURE', `Error viewing profile for ${targetEmail}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
 // 2. Balances
-app.get('/api/user/balances', async (req, res) => {
+app.get('/api/user/balances', authenticateToken, async (req, res) => {
     const email = req.query.email;
     // IDOR Protection: Users can only view their own balances unless admin
     if (req.user.role !== 'admin' && email !== req.user.email) {
@@ -541,7 +570,7 @@ app.get('/api/user/balances', async (req, res) => {
 });
 
 // 3. Announcements
-app.get('/api/announcements', async (req, res) => {
+app.get('/api/announcements', authenticateToken, async (req, res) => {
     try {
         const rows = await db.all('SELECT * FROM announcements ORDER BY date DESC');
         res.json(rows);
@@ -551,8 +580,7 @@ app.get('/api/announcements', async (req, res) => {
     }
 });
 
-app.post('/api/announcements', [
-    isAdmin,
+app.post('/api/announcements', authenticateToken, isAdmin, [
     body('type').isIn(['event', 'news', 'policy']).withMessage('Invalid announcement type'),
     body('title').notEmpty().withMessage('Title is required').trim().escape(),
     body('content').optional().trim().escape(),
@@ -574,7 +602,7 @@ app.post('/api/announcements', [
 });
 
 // 4. Requests
-app.get('/api/requests', async (req, res) => {
+app.get('/api/requests', authenticateToken, async (req, res) => {
     try {
         const rows = await db.all('SELECT * FROM requests ORDER BY id DESC');
         res.json(rows);
@@ -584,7 +612,7 @@ app.get('/api/requests', async (req, res) => {
     }
 });
 
-app.post('/api/requests', [
+app.post('/api/requests', authenticateToken, [
     body('title').notEmpty().withMessage('Title is required').trim().escape(),
     body('type').notEmpty().withMessage('Request type is required').trim().escape(),
     body('status').notEmpty().withMessage('Status is required').trim().escape(),
@@ -605,7 +633,7 @@ app.post('/api/requests', [
 });
 
 // 5. Annual Leave
-app.get('/api/leave/annual', async (req, res) => {
+app.get('/api/leave/annual', authenticateToken, async (req, res) => {
     try {
         const rows = await db.all('SELECT * FROM annual_leave ORDER BY id DESC');
         res.json(rows);
@@ -615,7 +643,7 @@ app.get('/api/leave/annual', async (req, res) => {
     }
 });
 
-app.post('/api/leave/annual', [
+app.post('/api/leave/annual', authenticateToken, [
     body('user_email').isEmail().normalizeEmail(),
     body('startDate').isISO8601().withMessage('Invalid start date'),
     body('endDate').isISO8601().withMessage('Invalid end date'),
@@ -646,7 +674,7 @@ app.post('/api/leave/annual', [
 });
 
 // 6. Sick Leave
-app.get('/api/leave/sick', async (req, res) => {
+app.get('/api/leave/sick', authenticateToken, async (req, res) => {
     try {
         const rows = await db.all('SELECT * FROM sick_leave ORDER BY id DESC');
         res.json(rows);
@@ -656,7 +684,7 @@ app.get('/api/leave/sick', async (req, res) => {
     }
 });
 
-app.post('/api/leave/sick', [
+app.post('/api/leave/sick', authenticateToken, [
     body('user_email').isEmail().normalizeEmail(),
     body('type').notEmpty().withMessage('Sick leave type is required').trim().escape(),
     body('duration').isInt({ min: 0 }).withMessage('Duration must be a non-negative integer'),
@@ -686,7 +714,7 @@ app.post('/api/leave/sick', [
 });
 
 // 7. Lateness Tracker
-app.get('/api/lateness', async (req, res) => {
+app.get('/api/lateness', authenticateToken, async (req, res) => {
     try {
         const rows = await db.all('SELECT * FROM lateness ORDER BY id DESC');
         res.json(rows);
@@ -696,7 +724,7 @@ app.get('/api/lateness', async (req, res) => {
     }
 });
 
-app.post('/api/lateness', [
+app.post('/api/lateness', authenticateToken, [
     body('time').notEmpty().withMessage('Time is required').trim().escape(),
     body('date').notEmpty().withMessage('Date is required').trim().escape(),
     body('lateness').isInt({ min: 0 }).withMessage('Lateness must be a non-negative integer'),
@@ -718,7 +746,7 @@ app.post('/api/lateness', [
 });
 
 // 8. Admin/Manager Dashboard Approvals
-app.get('/api/admin/pending', isManager, async (req, res) => {
+app.get('/api/admin/pending', authenticateToken, isManager, async (req, res) => {
     try {
         const rows = await db.all('SELECT * FROM pending_approvals');
         res.json(rows);
@@ -728,8 +756,7 @@ app.get('/api/admin/pending', isManager, async (req, res) => {
     }
 });
 
-app.post('/api/admin/action', [
-    isManager,
+app.post('/api/admin/action', authenticateToken, isManager, [
     body('id').isInt().withMessage('Invalid request ID'),
     body('action').isIn(['Approve', 'Reject']).withMessage('Invalid action'),
     validate
@@ -778,7 +805,7 @@ app.post('/api/admin/action', [
 });
 
 // 9. Performance Reviews
-app.get('/api/users', isAdmin, async (req, res) => {
+app.get('/api/users', authenticateToken, isAdmin, async (req, res) => {
     // For admin dropdowns
     try {
         const rows = await db.all('SELECT email, name FROM users WHERE role = ?', ['employee']);
@@ -789,7 +816,7 @@ app.get('/api/users', isAdmin, async (req, res) => {
     }
 });
 
-app.get('/api/performance', async (req, res) => {
+app.get('/api/performance', authenticateToken, async (req, res) => {
     const { email } = req.query;
     
     // Security: Ensure users can only see their own performance if not admin
@@ -809,8 +836,7 @@ app.get('/api/performance', async (req, res) => {
     }
 });
 
-app.post('/api/performance/init', [
-    isAdmin,
+app.post('/api/performance/init', authenticateToken, isAdmin, [
     body('user_email').isEmail().normalizeEmail(),
     body('manager_email').isEmail().normalizeEmail(),
     body('period').notEmpty().withMessage('Period is required').trim().escape(),
@@ -835,7 +861,7 @@ app.post('/api/performance/init', [
     }
 });
 
-app.put('/api/performance/employee', [
+app.put('/api/performance/employee', authenticateToken, [
     body('id').isInt().withMessage('Invalid review ID'),
     body('self_assessment').notEmpty().withMessage('Self assessment is required').trim().escape(),
     validate
@@ -868,8 +894,7 @@ app.put('/api/performance/employee', [
     }
 });
 
-app.put('/api/performance/manager', [
-    isManager,
+app.put('/api/performance/manager', authenticateToken, isManager, [
     body('id').isInt().withMessage('Invalid review ID'),
     body('manager_feedback').notEmpty().withMessage('Manager feedback is required').trim().escape(),
     body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
@@ -892,7 +917,7 @@ app.put('/api/performance/manager', [
 });
 
 // 10. Documents
-app.post('/api/documents/upload', (req, res) => {
+app.post('/api/documents/upload', authenticateToken, (req, res) => {
     upload.single('file')(req, res, async (uploadErr) => {
         if (uploadErr instanceof multer.MulterError && uploadErr.code === 'LIMIT_FILE_SIZE') {
             return res.status(400).json({ success: false, message: 'File exceeds 10MB size limit' });
@@ -920,7 +945,7 @@ app.post('/api/documents/upload', (req, res) => {
     });
 });
 
-app.get('/api/documents', async (req, res) => {
+app.get('/api/documents', authenticateToken, async (req, res) => {
     try {
         const rows = await db.all('SELECT * FROM documents ORDER BY id DESC');
         res.json(rows);
@@ -930,7 +955,7 @@ app.get('/api/documents', async (req, res) => {
     }
 });
 
-app.get('/api/documents/download/:filename', (req, res) => {
+app.get('/api/documents/download/:filename', authenticateToken, (req, res) => {
     const filepath = path.join(uploadDir, req.params.filename);
     if (fs.existsSync(filepath)) {
         logAudit(req.user.email, 'DOCUMENT_DOWNLOAD', `Downloaded document: ${req.params.filename}`);
@@ -942,7 +967,7 @@ app.get('/api/documents/download/:filename', (req, res) => {
 });
 
 // 11. User Management (Admin Only)
-app.get('/api/admin/users', isAdmin, async (req, res) => {
+app.get('/api/admin/users', authenticateToken, isAdmin, async (req, res) => {
     try {
         const rows = await db.all('SELECT email, name, role, annual_balance, sick_balance, annual_used, sick_used, phone FROM users');
         res.json(rows);
@@ -952,8 +977,7 @@ app.get('/api/admin/users', isAdmin, async (req, res) => {
     }
 });
 
-app.post('/api/admin/users', [
-    isAdmin,
+app.post('/api/admin/users', authenticateToken, isAdmin, [
     body('email').isEmail().normalizeEmail(),
     body('password').isLength({ min: 6 }),
     body('name').notEmpty(),
@@ -975,8 +999,7 @@ app.post('/api/admin/users', [
     }
 });
 
-app.put('/api/admin/users/:email', [
-    isAdmin,
+app.put('/api/admin/users/:email', authenticateToken, isAdmin, [
     body('name').notEmpty(),
     body('role').isIn(['employee', 'manager', 'admin']),
     validate
@@ -1003,7 +1026,7 @@ app.put('/api/admin/users/:email', [
     }
 });
 
-app.delete('/api/admin/users/:email', isAdmin, async (req, res) => {
+app.delete('/api/admin/users/:email', authenticateToken, isAdmin, async (req, res) => {
     const { email } = req.params;
     if (email === req.user.email) {
         logAudit(req.user.email, 'ADMIN_USER_DELETE_ATTEMPT', `Attempted to delete own account: ${email}`);
@@ -1020,7 +1043,7 @@ app.delete('/api/admin/users/:email', isAdmin, async (req, res) => {
 });
 
 // 12. Calendar
-app.get('/api/calendar', async (req, res) => {
+app.get('/api/calendar', authenticateToken, async (req, res) => {
     try {
         const announcements = await db.all('SELECT title, date FROM announcements');
         const annualLeaves = await db.all('SELECT * FROM annual_leave WHERE status = "Approved"');
@@ -1061,11 +1084,9 @@ app.get('/api/calendar', async (req, res) => {
     }
 });
 
-// Serve frontend static files in production
-const distPath = path.join(process.cwd(), 'dist');
+// Catch-all handler for any request that doesn't match an API route
 if (fs.existsSync(distPath)) {
-    app.use(express.static(distPath));
-    app.use((req, res) => {
+    app.get('(.*)', (req, res) => {
         if (!req.path.startsWith('/api')) {
             res.sendFile(path.join(distPath, 'index.html'));
         } else {
