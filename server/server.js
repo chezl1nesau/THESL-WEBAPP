@@ -38,8 +38,22 @@ const corsOrigins = requireEnv('CORS_ORIGINS')
     .filter(Boolean);
 const frontendBaseUrl = process.env.FRONTEND_URL || corsOrigins[0] || 'http://localhost:5173';
 
-// Security Middleware
-app.use(helmet());
+// Security Middleware with custom CSP for Vite/React
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Needed for some Vite/plugin-react features
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+            imgSrc: ["'self'", "data:", "https:"],
+            connectSrc: ["'self'", "https:"],
+            objectSrc: ["'none'"],
+            mediaSrc: ["'self'"],
+            frameSrc: ["'none'"],
+        },
+    },
+}));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(cors({
     origin: (origin, callback) => {
@@ -52,37 +66,28 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+// Move rate limiters back
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
-    message: 'Too many requests from this IP, please try again after 15 minutes'
-});
-// Apply limiter to all /api/ routes except login endpoints (no limit on login attempts)
-app.use('/api/', (req, res, next) => {
-    // Skip rate limiting for login endpoints to allow unlimited login attempts
-    if (req.path === '/auth/login' || req.path === '/auth/2fa/login') {
-        return next();
-    }
-    limiter(req, res, next);
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: 'Too many requests from this IP, please try again later'
 });
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 10,
-    message: 'Too many password reset attempts, please try again later'
+    message: 'Too many reset attempts, try again later'
 });
+
 app.use(cookieParser());
 app.use(bodyParser.json({ limit: '10mb' }));
 
 // Serve frontend static files
 const distPath = path.join(process.cwd(), 'dist');
 if (fs.existsSync(distPath)) {
-    app.use(express.static(distPath, {
-        maxAge: '1h',
-        setHeaders: (res, path) => {
-            if (path.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
-        }
-    }));
+    app.use(express.static(distPath));
 }
+
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
 const uploadDir = path.join(process.cwd(), 'server', 'uploads');
 if (!fs.existsSync(uploadDir)) {
@@ -1086,7 +1091,7 @@ app.get('/api/calendar', authenticateToken, async (req, res) => {
 
 // Catch-all handler for any request that doesn't match an API route
 if (fs.existsSync(distPath)) {
-    app.get('(.*)', (req, res) => {
+    app.use((req, res) => {
         if (!req.path.startsWith('/api')) {
             res.sendFile(path.join(distPath, 'index.html'));
         } else {

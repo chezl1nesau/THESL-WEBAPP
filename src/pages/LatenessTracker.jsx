@@ -25,7 +25,7 @@ export default function LatenessTracker({ token }) {
 
     const handleArrival = async () => {
         const standardStart = new Date(currentTime);
-        standardStart.setHours(9, 0, 0, 0);
+        standardStart.setHours(8, 0, 0, 0);
         
         let latenessMinutes = 0;
         let statusText = 'On Time';
@@ -100,7 +100,7 @@ export default function LatenessTracker({ token }) {
                 <div style={{color: 'var(--text-secondary)', marginBottom: '1.5rem'}}>
                     {currentTime.toLocaleDateString('en-US', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'})}
                 </div>
-                <p style={{color: 'var(--text-secondary)', marginBottom: '1.5rem'}}>Standard Start Time: 9:00 AM</p>
+                <p style={{color: 'var(--text-secondary)', marginBottom: '1.5rem'}}>Standard Start Time: 8:00 AM</p>
                 <button className="btn btn-primary" onClick={handleArrival}>MARK ARRIVAL</button>
             </div>
 
