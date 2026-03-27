@@ -322,7 +322,7 @@ export default function Landing({ onGoToLogin }) {
           transition: 'all 1s cubic-bezier(0.4,0,0.2,1) 0.35s',
           color: 'white',
         }}>
-          Finding the{' '}
+          Finding{' '}
           <span style={{
             background: 'linear-gradient(130deg, #e8e0c8 0%, #c8d4e8 40%, #bff368 100%)',
             backgroundSize: '200% auto',
@@ -331,7 +331,7 @@ export default function Landing({ onGoToLogin }) {
             backgroundClip: 'text',
             animation: 'shimmerLine 5s linear infinite',
           }}>
-            THESL
+            The SL
           </span>
           <br />
           in Every Day.
