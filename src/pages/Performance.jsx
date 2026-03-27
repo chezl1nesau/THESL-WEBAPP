@@ -14,6 +14,11 @@ export default function Performance({ user, token }) {
     const [activeManagerFeedback, setActiveManagerFeedback] = useState(null);
     const [feedbackText, setFeedbackText] = useState('');
     const [feedbackRating, setFeedbackRating] = useState(5);
+    // KPI state
+    const [kpiFiles, setKpiFiles] = useState([]);
+    const [kpiTitle, setKpiTitle] = useState('');
+    const [kpiFile, setKpiFile] = useState(null);
+    const [kpiStatus, setKpiStatus] = useState({ type: '', message: '' });
 
     const fetchReviews = useCallback(() => {
         api.get(`/api/performance?email=${user.email}&role=${user.role}`, token)
@@ -22,9 +27,19 @@ export default function Performance({ user, token }) {
             .catch(err => console.error(err));
     }, [token, user.email, user.role]);
 
+    const fetchKpis = useCallback(() => {
+        api.get('/api/documents', token)
+            .then(res => res.json())
+            .then(data => {
+                setKpiFiles(data.filter(d => d.title.toUpperCase().includes('[KPI]')));
+            })
+            .catch(err => console.error(err));
+    }, [token]);
+
     useEffect(() => {
         fetchReviews();
-        if (user.role === 'admin') {
+        fetchKpis();
+        if (user.role === 'admin' || user.role === 'manager') {
             api.get('/api/users', token)
                 .then(res => res.json())
                 .then(data => {
@@ -33,7 +48,7 @@ export default function Performance({ user, token }) {
                 })
                 .catch(err => console.error(err));
         }
-    }, [fetchReviews, user.role, token]);
+    }, [fetchReviews, fetchKpis, user.role, token]);
 
     const handleInitReview = async (e) => {
         e.preventDefault();
@@ -79,6 +94,39 @@ export default function Performance({ user, token }) {
         } catch (err) {
             console.error(err);
         }
+    };
+
+    const handleUploadKPI = async (e) => {
+        e.preventDefault();
+        if (!kpiFile) return;
+
+        const formData = new FormData();
+        formData.append('title', `[KPI] ${kpiTitle}`);
+        formData.append('file', kpiFile);
+
+        setKpiStatus({ type: 'info', message: 'Uploading KPI...' });
+
+        try {
+            const res = await api.upload('/api/documents/upload', formData, token);
+            if (res.ok) {
+                setKpiStatus({ type: 'success', message: 'KPI sheet uploaded successfully!' });
+                setKpiTitle('');
+                setKpiFile(null);
+                const fileInput = document.getElementById('kpi-file-upload');
+                if (fileInput) fileInput.value = '';
+                fetchKpis();
+                setTimeout(() => setKpiStatus({ type: '', message: '' }), 3000);
+            } else {
+                setKpiStatus({ type: 'error', message: 'Upload failed' });
+            }
+        } catch(err) {
+            console.error(err);
+            setKpiStatus({ type: 'error', message: 'Network error. Please try again.' });
+        }
+    };
+
+    const handleDownloadKpi = (filename) => {
+        window.open(`/api/documents/download/${filename}`, '_blank');
     };
 
     return (
@@ -203,6 +251,60 @@ export default function Performance({ user, token }) {
                                     <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                         {r.status === 'Completed' ? r.manager_feedback : 'Awaiting Manager'}
                                     </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+
+            {/* KPI Section */}
+            <div className="card" style={{ marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <h3 className="card-title" style={{ margin: 0, color: '#34d399' }}>KPI Sheets & Results</h3>
+                </div>
+
+                {(user.role === 'admin' || user.role === 'manager') && (
+                    <div style={{ marginBottom: '1.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid var(--border)' }}>
+                        <h4 style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>Upload New KPI Results (Excel/CSV)</h4>
+                        {kpiStatus.message && (
+                            <div style={{ padding: '0.75rem', marginBottom: '1rem', borderRadius: '4px', backgroundColor: kpiStatus.type === 'success' ? '#def7ec' : kpiStatus.type === 'error' ? '#fde8e8' : '#e1effe', color: kpiStatus.type === 'success' ? '#03543f' : kpiStatus.type === 'error' ? '#9b1c1c' : '#1e429f' }}>
+                                {kpiStatus.message}
+                            </div>
+                        )}
+                        <form onSubmit={handleUploadKPI} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                            <div className="form-group" style={{ flex: '1', minWidth: '200px', margin: 0 }}>
+                                <label>KPI Description / Employee</label>
+                                <input type="text" value={kpiTitle} onChange={e => setKpiTitle(e.target.value)} required placeholder="e.g. Q1 Sales Targets - John Doe" />
+                            </div>
+                            <div className="form-group" style={{ flex: '1', minWidth: '250px', margin: 0 }}>
+                                <label>Excel Sheet (.xlsx, .csv)</label>
+                                <input id="kpi-file-upload" type="file" onChange={e => setKpiFile(e.target.files[0])} accept=".xlsx,.xls,.csv" required style={{ backgroundColor: 'white' }} />
+                            </div>
+                            <button type="submit" className="btn btn-primary" style={{ padding: '0.75rem 1.5rem' }}>Upload Excel Sheet</button>
+                        </form>
+                    </div>
+                )}
+
+                {kpiFiles.length === 0 ? (
+                    <div className="empty-state">No KPI sheets have been uploaded yet.</div>
+                ) : (
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Report Name</th>
+                                <th>Upload Date</th>
+                                <th>Size</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {kpiFiles.map(file => (
+                                <tr key={file.id}>
+                                    <td><strong>{file.title.replace('[KPI] ', '')}</strong></td>
+                                    <td>{file.date}</td>
+                                    <td>{Math.round(file.size / 1024)} KB</td>
+                                    <td><button className="btn" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid var(--border)' }} onClick={() => handleDownloadKpi(file.filename)}>Download</button></td>
                                 </tr>
                             ))}
                         </tbody>
