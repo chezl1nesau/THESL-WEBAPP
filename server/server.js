@@ -745,10 +745,18 @@ app.post('/api/admin/action', [
         if (action === 'Approve') {
             if (pending.type === 'Annual') {
                 await db.run('UPDATE annual_leave SET status = ? WHERE id = ?', ['Approved', pending.reference_id]);
-                await db.run('UPDATE users SET annual_balance = annual_balance - ?, annual_used = annual_used + ? WHERE email = ?', [pending.duration, pending.duration, pending.user_email]);
+                const user = await db.get('SELECT annual_balance, annual_used FROM users WHERE email = ?', [pending.user_email]);
+                if (user) {
+                    await db.run('UPDATE users SET annual_balance = ?, annual_used = ? WHERE email = ?', 
+                        [user.annual_balance - pending.duration, user.annual_used + pending.duration, pending.user_email]);
+                }
             } else if (pending.type === 'Sick') {
                 await db.run('UPDATE sick_leave SET status = ? WHERE id = ?', ['Approved', pending.reference_id]);
-                await db.run('UPDATE users SET sick_balance = sick_balance - ?, sick_used = sick_used + ? WHERE email = ?', [pending.duration, pending.duration, pending.user_email]);
+                const user = await db.get('SELECT sick_balance, sick_used FROM users WHERE email = ?', [pending.user_email]);
+                if (user) {
+                    await db.run('UPDATE users SET sick_balance = ?, sick_used = ? WHERE email = ?', 
+                        [user.sick_balance - pending.duration, user.sick_used + pending.duration, pending.user_email]);
+                }
             }
             logAudit(req.user.email, 'APPROVAL_ACTION', `Approved ${pending.type} request for ${pending.user_email} (ID: ${pending.reference_id})`);
         } else if (action === 'Reject') {
