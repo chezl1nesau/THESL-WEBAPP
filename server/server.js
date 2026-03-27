@@ -814,7 +814,7 @@ app.post('/api/admin/action', authenticateToken, isManager, [
 });
 
 // 9. Performance Reviews
-app.get('/api/users', authenticateToken, isAdmin, async (req, res) => {
+app.get('/api/users', authenticateToken, isManager, async (req, res) => {
     // For admin dropdowns
     try {
         const rows = await db.all('SELECT email, name FROM users WHERE role = ?', ['employee']);
@@ -836,6 +836,8 @@ app.get('/api/performance', authenticateToken, async (req, res) => {
         let rawRows = [];
         if (req.user.role === 'admin') {
             rawRows = await db.all('SELECT * FROM performance_reviews ORDER BY id DESC');
+        } else if (req.user.role === 'manager') {
+            rawRows = await db.all('SELECT * FROM performance_reviews WHERE user_email = ? OR manager_email = ? ORDER BY id DESC', [targetEmail, req.user.email]);
         } else {
             rawRows = await db.all('SELECT * FROM performance_reviews WHERE user_email = ? ORDER BY id DESC', [targetEmail]);
         }
@@ -857,7 +859,7 @@ app.get('/api/performance', authenticateToken, async (req, res) => {
     }
 });
 
-app.post('/api/performance/init', authenticateToken, isAdmin, [
+app.post('/api/performance/init', authenticateToken, isManager, [
     body('user_email').isEmail().normalizeEmail(),
     body('manager_email').isEmail().normalizeEmail(),
     body('period').notEmpty().withMessage('Period is required').trim().escape(),

@@ -88,7 +88,7 @@ export default function Performance({ user, token }) {
                 <p>Quarterly goal tracking and manager feedback.</p>
             </div>
 
-            {user.role === 'admin' ? (
+            {(user.role === 'admin' || user.role === 'manager') && (
                 <>
                     <div className="card" style={{ marginBottom: '1.5rem' }}>
                         <h3 className="card-title" style={{ marginBottom: '1rem' }}>Initiate New Review</h3>
@@ -109,14 +109,13 @@ export default function Performance({ user, token }) {
                         </form>
                     </div>
 
-                    {/* Action Required: Manager Feedback */}
                     <div className="card" style={{ marginBottom: '1.5rem' }}>
                         <h3 className="card-title" style={{ marginBottom: '1rem', color: 'var(--accent)' }}>Awaiting My Feedback</h3>
-                        {reviews.filter(r => r.status === 'Awaiting Manager').length === 0 ? (
+                        {reviews.filter(r => r.status === 'Awaiting Manager' && (user.role === 'admin' || r.manager_email === user.email)).length === 0 ? (
                             <p style={{color: 'var(--text-light)'}}>You have no pending reviews to close out.</p>
                         ) : (
                             <div style={{ display: 'grid', gap: '1rem' }}>
-                                {reviews.filter(r => r.status === 'Awaiting Manager').map(r => (
+                                {reviews.filter(r => r.status === 'Awaiting Manager' && (user.role === 'admin' || r.manager_email === user.email)).map(r => (
                                     <div key={r.id} style={{ padding: '1rem', border: '1px solid var(--border)', borderRadius: '6px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                                             <strong>{r.user_name} ({r.period})</strong>
@@ -148,10 +147,75 @@ export default function Performance({ user, token }) {
                             </div>
                         )}
                     </div>
+                </>
+            )}
 
-                    {/* All Reviews Log */}
-                    <div className="card">
-                        <h3 className="card-title" style={{ marginBottom: '1rem' }}>Master Review Log</h3>
+            <div className="card" style={{ marginBottom: '1.5rem' }}>
+                <h3 className="card-title" style={{ marginBottom: '1rem', color: 'var(--accent)' }}>Action Required</h3>
+                {reviews.filter(r => r.status === 'Awaiting Employee' && r.user_email === user.email).length === 0 ? (
+                    <p style={{color: 'var(--text-light)'}}>You have no pending performance reviews to self-assess.</p>
+                ) : (
+                    <div style={{ display: 'grid', gap: '1rem' }}>
+                        {reviews.filter(r => r.status === 'Awaiting Employee' && r.user_email === user.email).map(r => (
+                            <div key={r.id} style={{ padding: '1rem', border: '1px solid var(--border)', borderRadius: '6px' }}>
+                                <div style={{ marginBottom: '0.5rem' }}>
+                                    <strong>{r.period} Self-Assessment</strong>
+                                    <p style={{fontSize: '0.85rem', color: 'var(--text-light)'}}>Assigned by {r.manager_email} on {r.date}</p>
+                                </div>
+                                
+                                {activeSelfAssessment?.id === r.id ? (
+                                    <div>
+                                        <textarea style={{ width: '100%', marginBottom: '0.5rem' }} rows="4" placeholder="Detail your accomplishments and goals..." value={selfAssessmentText} onChange={e => setSelfAssessmentText(e.target.value)}></textarea>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <button className="btn" onClick={() => setActiveSelfAssessment(null)} style={{background: 'transparent', border:'1px solid var(--border)'}}>Cancel</button>
+                                            <button className="btn btn-primary" onClick={handleEmployeeSubmit} style={{marginLeft: '0.5rem'}}>Submit Assessment</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <button className="btn btn-primary" onClick={() => {setActiveSelfAssessment(r); setSelfAssessmentText('');}}>Start Self-Assessment</button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <div className="card" style={{ marginBottom: '1.5rem' }}>
+                <h3 className="card-title" style={{ marginBottom: '1rem' }}>My Completed & In-Progress Reviews</h3>
+                {reviews.filter(r => r.status !== 'Awaiting Employee' && r.user_email === user.email).length === 0 ? (
+                    <div className="empty-state">No historical reviews</div>
+                ) : (
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Period</th>
+                                <th>Status</th>
+                                <th>Rating</th>
+                                <th>Feedback</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {reviews.filter(r => r.status !== 'Awaiting Employee' && r.user_email === user.email).map(r => (
+                                <tr key={r.id}>
+                                    <td>{r.period}</td>
+                                    <td><span className={`badge badge-${r.status === 'Completed' ? 'success' : 'warning'}`}>{r.status}</span></td>
+                                    <td>{r.status === 'Completed' ? `${r.rating}/5` : '-'}</td>
+                                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {r.status === 'Completed' ? r.manager_feedback : 'Awaiting Manager'}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+
+            {(user.role === 'admin' || user.role === 'manager') && (
+                <div className="card">
+                    <h3 className="card-title" style={{ marginBottom: '1rem' }}>Team Review Log</h3>
+                    {reviews.filter(r => r.user_email !== user.email && (user.role === 'admin' || r.manager_email === user.email)).length === 0 ? (
+                        <div className="empty-state">No reviews for your team members</div>
+                    ) : (
                         <table>
                             <thead>
                                 <tr>
@@ -162,7 +226,7 @@ export default function Performance({ user, token }) {
                                 </tr>
                             </thead>
                             <tbody>
-                                {reviews.filter(r => r.status !== 'Awaiting Manager').map(r => (
+                                {reviews.filter(r => r.user_email !== user.email && (user.role === 'admin' || r.manager_email === user.email)).map(r => (
                                     <tr key={r.id}>
                                         <td>{r.user_name}</td>
                                         <td>{r.period}</td>
@@ -172,67 +236,8 @@ export default function Performance({ user, token }) {
                                 ))}
                             </tbody>
                         </table>
-                    </div>
-                </>
-            ) : (
-                <>
-                    {/* Employee Dashboard */}
-                    <div className="card" style={{ marginBottom: '1.5rem' }}>
-                        <h3 className="card-title" style={{ marginBottom: '1rem', color: 'var(--accent)' }}>Action Required</h3>
-                        {reviews.filter(r => r.status === 'Awaiting Employee').length === 0 ? (
-                            <p style={{color: 'var(--text-light)'}}>You have no pending performance reviews.</p>
-                        ) : (
-                            <div style={{ display: 'grid', gap: '1rem' }}>
-                                {reviews.filter(r => r.status === 'Awaiting Employee').map(r => (
-                                    <div key={r.id} style={{ padding: '1rem', border: '1px solid var(--border)', borderRadius: '6px' }}>
-                                        <div style={{ marginBottom: '0.5rem' }}>
-                                            <strong>{r.period} Self-Assessment</strong>
-                                            <p style={{fontSize: '0.85rem', color: 'var(--text-light)'}}>Assigned by {r.manager_email} on {r.date}</p>
-                                        </div>
-                                        
-                                        {activeSelfAssessment?.id === r.id ? (
-                                            <div>
-                                                <textarea style={{ width: '100%', marginBottom: '0.5rem' }} rows="4" placeholder="Detail your accomplishments and goals..." value={selfAssessmentText} onChange={e => setSelfAssessmentText(e.target.value)}></textarea>
-                                                <div style={{ textAlign: 'right' }}>
-                                                    <button className="btn" onClick={() => setActiveSelfAssessment(null)} style={{background: 'transparent', border:'1px solid var(--border)'}}>Cancel</button>
-                                                    <button className="btn btn-primary" onClick={handleEmployeeSubmit} style={{marginLeft: '0.5rem'}}>Submit Assessment</button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <button className="btn btn-primary" onClick={() => {setActiveSelfAssessment(r); setSelfAssessmentText('');}}>Start Self-Assessment</button>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="card">
-                        <h3 className="card-title" style={{ marginBottom: '1rem' }}>My Completed & In-Progress Reviews</h3>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Period</th>
-                                    <th>Status</th>
-                                    <th>Rating</th>
-                                    <th>Feedback</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {reviews.filter(r => r.status !== 'Awaiting Employee').map(r => (
-                                    <tr key={r.id}>
-                                        <td>{r.period}</td>
-                                        <td><span className={`badge badge-${r.status === 'Completed' ? 'success' : 'warning'}`}>{r.status}</span></td>
-                                        <td>{r.status === 'Completed' ? `${r.rating}/5` : '-'}</td>
-                                        <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {r.status === 'Completed' ? r.manager_feedback : 'Awaiting Manager'}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </>
+                    )}
+                </div>
             )}
         </>
     );
