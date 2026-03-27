@@ -617,7 +617,7 @@ tbody tr:hover {
 }
 
 .rbc-off-range-bg {
-    background: rgba(255, 255, 255, 0.05) !important;
+    background: transparent !important;
     border-color: var(--border) !important;
 }
 

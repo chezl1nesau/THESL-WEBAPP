@@ -54,11 +54,17 @@ async function queryToSupabase(query, type, params = []) {
 
         // SELECT query
         if (normalizedQuery.toUpperCase().startsWith('SELECT')) {
-            const fromMatch = normalizedQuery.match(/FROM\s+(\w+)/i);
+            const fromMatch = normalizedQuery.match(/FROM\s+(\w+)(?:\s+\w+)?/i);
             if (!fromMatch) throw new Error('Could not parse table name from SELECT');
             const table = fromMatch[1];
             
-            let queryBuilder = supabase.from(table).select('*');
+            // Handle JOINs (specifically for performance_reviews JOIN users)
+            let selectStr = '*';
+            if (normalizedQuery.match(/LEFT JOIN users/i)) {
+                selectStr = '*, users(name)';
+            }
+
+            let queryBuilder = supabase.from(table).select(selectStr);
 
             // Handle WHERE
             const whereMatch = normalizedQuery.match(/WHERE\s+([\s\S]+?)(?:\s+ORDER BY|\s+LIMIT|$)/i);
@@ -67,8 +73,9 @@ async function queryToSupabase(query, type, params = []) {
                 const conditions = whereClause.split(/\s+AND\s+/i);
                 let paramOffset = 0;
                 for (const condition of conditions) {
-                    const eqMatch = condition.match(/(\w+)\s*=\s*\?/i);
-                    const orMatch = condition.match(/(\w+)\s+IN\s+\((\?)\)/i);
+                    // Strip aliases like p.user_email
+                    const cleanCondition = condition.replace(/\w+\./g, '');
+                    const eqMatch = cleanCondition.match(/(\w+)\s*=\s*\?/i);
                     if (eqMatch) {
                         queryBuilder = queryBuilder.eq(eqMatch[1], params[paramOffset++]);
                     }
@@ -78,7 +85,9 @@ async function queryToSupabase(query, type, params = []) {
             // Handle ORDER BY
             const orderMatch = normalizedQuery.match(/ORDER BY\s+([\w.]+)(?:\s+(ASC|DESC))?/i);
             if (orderMatch) {
-                queryBuilder = queryBuilder.order(orderMatch[1], { ascending: orderMatch[2]?.toUpperCase() !== 'DESC' });
+                // Strip alias like p.id -> id
+                const field = orderMatch[1].includes('.') ? orderMatch[1].split('.')[1] : orderMatch[1];
+                queryBuilder = queryBuilder.order(field, { ascending: orderMatch[2]?.toUpperCase() !== 'DESC' });
             }
 
             // Handle LIMIT
@@ -91,10 +100,20 @@ async function queryToSupabase(query, type, params = []) {
             const { data, error } = await queryBuilder;
             if (error) throw error;
             
+            // Post-process JOIN results to match standard SQLite rows { user_name: ... }
+            const rows = (data || []).map(row => {
+                const newRow = { ...row };
+                if (row.users) {
+                    newRow.user_name = Array.isArray(row.users) ? row.users[0]?.name : row.users.name;
+                    delete newRow.users;
+                }
+                return newRow;
+            });
+
             if (type === 'single') {
-                return data?.[0] || null;
+                return rows?.[0] || null;
             }
-            return data || [];
+            return rows;
         }
 
         // UPDATE query
