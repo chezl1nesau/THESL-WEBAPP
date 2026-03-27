@@ -111,7 +111,7 @@ export default function Performance({ user, token }) {
 
                     {/* Action Required: Manager Feedback */}
                     <div className="card" style={{ marginBottom: '1.5rem' }}>
-                        <h3 className="card-title" style={{ marginBottom: '1rem', color: '#ff5a1f' }}>Awaiting My Feedback</h3>
+                        <h3 className="card-title" style={{ marginBottom: '1rem', color: 'var(--accent)' }}>Awaiting My Feedback</h3>
                         {reviews.filter(r => r.status === 'Awaiting Manager').length === 0 ? (
                             <p style={{color: 'var(--text-light)'}}>You have no pending reviews to close out.</p>
                         ) : (
@@ -178,7 +178,7 @@ export default function Performance({ user, token }) {
                 <>
                     {/* Employee Dashboard */}
                     <div className="card" style={{ marginBottom: '1.5rem' }}>
-                        <h3 className="card-title" style={{ marginBottom: '1rem', color: '#ff5a1f' }}>Action Required</h3>
+                        <h3 className="card-title" style={{ marginBottom: '1rem', color: 'var(--accent)' }}>Action Required</h3>
                         {reviews.filter(r => r.status === 'Awaiting Employee').length === 0 ? (
                             <p style={{color: 'var(--text-light)'}}>You have no pending performance reviews.</p>
                         ) : (

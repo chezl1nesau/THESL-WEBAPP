@@ -58,13 +58,7 @@ async function queryToSupabase(query, type, params = []) {
             if (!fromMatch) throw new Error('Could not parse table name from SELECT');
             const table = fromMatch[1];
             
-            // Handle JOINs (specifically for performance_reviews JOIN users)
-            let selectStr = '*';
-            if (normalizedQuery.match(/LEFT JOIN users/i)) {
-                selectStr = '*, users(name)';
-            }
-
-            let queryBuilder = supabase.from(table).select(selectStr);
+            let queryBuilder = supabase.from(table).select('*');
 
             // Handle WHERE
             const whereMatch = normalizedQuery.match(/WHERE\s+([\s\S]+?)(?:\s+ORDER BY|\s+LIMIT|$)/i);
@@ -87,6 +81,7 @@ async function queryToSupabase(query, type, params = []) {
             if (orderMatch) {
                 // Strip alias like p.id -> id
                 const field = orderMatch[1].includes('.') ? orderMatch[1].split('.')[1] : orderMatch[1];
+                console.log('ORDER BY Field:', field, 'Original:', orderMatch[1]);
                 queryBuilder = queryBuilder.order(field, { ascending: orderMatch[2]?.toUpperCase() !== 'DESC' });
             }
 

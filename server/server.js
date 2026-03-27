@@ -833,11 +833,23 @@ app.get('/api/performance', authenticateToken, async (req, res) => {
     
     let rows = [];
     try {
+        let rawRows = [];
         if (req.user.role === 'admin') {
-            rows = await db.all('SELECT p.*, u.name as user_name FROM performance_reviews p LEFT JOIN users u ON p.user_email = u.email ORDER BY p.id DESC');
+            rawRows = await db.all('SELECT * FROM performance_reviews ORDER BY id DESC');
         } else {
-            rows = await db.all('SELECT p.*, u.name as user_name FROM performance_reviews p LEFT JOIN users u ON p.user_email = u.email WHERE p.user_email = ? ORDER BY p.id DESC', [targetEmail]);
+            rawRows = await db.all('SELECT * FROM performance_reviews WHERE user_email = ? ORDER BY id DESC', [targetEmail]);
         }
+
+        // Fetch user data manually to bypass Supabase schema JOIN limitations
+        const allUsers = await db.all('SELECT email, name FROM users');
+        const userMap = {};
+        allUsers.forEach(u => userMap[u.email] = u.name);
+
+        rows = rawRows.map(row => ({
+            ...row,
+            user_name: userMap[row.user_email] || 'Unknown User'
+        }));
+        
         res.json(rows);
     } catch (err) {
         logAudit(req.user.email, 'PERFORMANCE_REVIEW_VIEW_FAILURE', `Error viewing performance reviews for ${targetEmail}: ${err.message}`);
