@@ -1,43 +1,40 @@
-# thesl-hr-portal
+# THESL-WEBAPP (HR Portal)
 
-HR portal application with a Vite/React frontend and an Express/SQLite backend.
+Modern HR management portal with a React frontend and an Express backend using Supabase for persistence.
+
+## Features
+- RBAC (Admin, Manager, Employee)
+- Leave Management (Annual & Sick)
+- Performance Reviews
+- MFA (TOTP) & Secure Authentication
+- Audit Logging & Lateness Tracker
 
 ## Getting Started
 
 1. Install dependencies:
    - `npm install`
-2. Create your environment file:
+2. Configure environment:
    - `cp .env.example .env`
-3. Start the development server:
-   - `npm run dev`
+   - Fill in `SUPABASE_URL` and `SUPABASE_KEY`
+3. Run schema setup:
+   - Execute `supabase-setup.sql` in your Supabase SQL editor.
+4. Start the development server:
+   - `npm run dev` (Frontend)
+   - `npm start` (Backend)
 
 ## Required Environment Variables
 
 These values are required for the backend to start:
 
+- `SUPABASE_URL`: Your Supabase project URL
+- `SUPABASE_KEY`: Your Supabase anon/public key (or service role if preferred)
 - `JWT_ACCESS_SECRET`
 - `JWT_REFRESH_SECRET`
 - `JWT_RESET_SECRET`
-- `CORS_ORIGINS`
+- `CORS_ORIGINS`: Comma-separated list (e.g., `http://localhost:5173`)
 
-Optional:
+Optional SMTP config:
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
 
-- `NODE_ENV` (defaults to `development`)
-- `PORT` (defaults to `3000`)
-- `FRONTEND_URL` (defaults to first origin in `CORS_ORIGINS`)
-- SMTP config for password reset delivery:
-  - `SMTP_HOST`
-  - `SMTP_PORT`
-  - `SMTP_SECURE`
-  - `SMTP_USER`
-  - `SMTP_PASS`
-  - `SMTP_FROM`
-  - In non-production, if SMTP is not configured, the app uses an Ethereal test inbox and logs only a preview URL.
-
-## Security Notes
-
-- JWT secrets are required and must be unique per token type.
-- CORS is allowlist-based via `CORS_ORIGINS` (comma-separated).
-- Uploads are restricted by type and size (10MB max).
-- Password reset uses short-lived hashed token verification.
-- Reset links are delivered via SMTP and not logged in plaintext.
+## Deployment
+Compatible with Vercel and traditional VPS environments using PM2.
