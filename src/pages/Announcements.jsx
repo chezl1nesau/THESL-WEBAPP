@@ -2,10 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { Bell, Newspaper, ScrollText, Calendar as CalendarIcon, Filter } from 'lucide-react';
 import { api } from '../utils/api';
 
-export default function Announcements({ token }) {
+export default function Announcements({ token, user }) {
     const [announcements, setAnnouncements] = useState([]);
     const [filter, setFilter] = useState('all');
     const [loadError, setLoadError] = useState('');
+    const [showForm, setShowForm] = useState(false);
+    const [status, setStatus] = useState({ type: '', message: '' });
+    
+    // Form fields
+    const [formData, setFormData] = useState({
+        title: '',
+        type: 'news',
+        content: '',
+        date: new Date().toISOString().split('T')[0]
+    });
+
 
     useEffect(() => {
         setLoadError('');
@@ -18,15 +29,44 @@ export default function Announcements({ token }) {
             });
     }, [token]);
 
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setStatus({ type: 'info', message: 'Posting announcement...' });
+        
+        try {
+            const payload = {
+                ...formData,
+                author: user.name.split(' ')[0]
+            };
+            
+            const res = await api.post('/api/announcements', payload, token);
+            const newAnnouncement = await res.json();
+            
+            setAnnouncements([newAnnouncement, ...announcements]);
+            setShowForm(false);
+            setFormData({ title: '', type: 'news', content: '', date: new Date().toISOString().split('T')[0] });
+            setStatus({ type: 'success', message: 'Announcement posted successfully!' });
+            setTimeout(() => setStatus({ type: '', message: '' }), 3000);
+        } catch (err) {
+            console.error('Failed to post announcement', err);
+            setStatus({ type: 'error', message: 'Failed to post announcement. Please try again.' });
+        }
+    };
+
     const filteredAnnouncements = filter === 'all' 
         ? announcements 
         : announcements.filter(a => a.type === filter);
 
     return (
         <>
-            <div className="page-header">
-                <h1>Company Announcements</h1>
-                <p>Stay updated with the latest company news and events</p>
+            <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                    <h1>Company Announcements</h1>
+                    <p>Stay updated with the latest company news and events</p>
+                </div>
+                {user?.role === 'admin' && !showForm && (
+                    <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ New Announcement</button>
+                )}
             </div>
 
             {loadError && (
@@ -36,6 +76,44 @@ export default function Announcements({ token }) {
             )}
 
             <div className="card" style={{ padding: '2rem' }}>
+                {status.message && (
+                    <div style={{ padding: '1rem', marginBottom: '1.5rem', borderRadius: '8px', backgroundColor: status.type === 'success' ? '#def7ec' : status.type === 'error' ? '#fde8e8' : '#e1effe', color: status.type === 'success' ? '#03543f' : status.type === 'error' ? '#9b1c1c' : '#1e429f' }}>
+                        {status.message}
+                    </div>
+                )}
+                
+                {showForm && (
+                    <form onSubmit={handleSubmit} style={{ marginBottom: '2.5rem', padding: '1.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                        <h3 style={{ marginBottom: '1.5rem', color: 'white' }}>Post New Announcement</h3>
+                        <div className="grid-2" style={{ gap: '1rem', marginBottom: '1rem' }}>
+                            <div className="form-group">
+                                <label>Title</label>
+                                <input type="text" required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="Announcement title" />
+                            </div>
+                            <div className="form-group">
+                                <label>Type</label>
+                                <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                                    <option value="news">Company News</option>
+                                    <option value="policy">Policy Update</option>
+                                    <option value="event">Event</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: '1rem' }}>
+                            <label>Content</label>
+                            <textarea rows="4" required value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} placeholder="Write your announcement details here..."></textarea>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                            <label>Date</label>
+                            <input type="date" required value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} style={{ maxWidth: '200px' }} />
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                            <button type="button" className="btn" style={{ background: 'var(--bg-main)', border: '1px solid var(--border)' }} onClick={() => setShowForm(false)}>Cancel</button>
+                            <button type="submit" className="btn btn-primary">Publish Announcement</button>
+                        </div>
+                    </form>
+                )}
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2.5rem' }}>
                     <Filter size={18} color="var(--text-light)" />
                     <div className="filter-buttons" style={{ margin: 0 }}>
