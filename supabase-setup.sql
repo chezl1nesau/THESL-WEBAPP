@@ -136,8 +136,8 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     id BIGSERIAL PRIMARY KEY,
     title TEXT,
     type TEXT,
-    start TIMESTAMP,
-    end TIMESTAMP
+    "start" TIMESTAMP,
+    "end" TIMESTAMP
 );
 
 -- =======================
