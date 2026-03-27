@@ -10,8 +10,8 @@ const onRefreshed = (token) => {
     refreshSubscribers = [];
 };
 
-// Get API base URL from environment or use relative paths
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || '';
+// Backend API URL - Render production server
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://thesl-backend.onrender.com';
 
 // Retry logic helper with exponential backoff
 const fetchWithRetry = async (fullUrl, options, maxRetries = 3) => {
