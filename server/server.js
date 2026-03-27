@@ -1020,6 +1020,23 @@ app.post('/api/admin/users', authenticateToken, isAdmin, [
     }
 });
 
+app.post('/api/admin/accrue-leave', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const users = await db.all('SELECT email, annual_balance, sick_balance FROM users');
+        for (const user of users) {
+            // Adds +15 Annual Leave and +10 Sick Leave (averaging 30 per 36 months)
+            const newAnnual = (user.annual_balance || 0) + 15;
+            const newSick = (user.sick_balance || 0) + 10;
+            await db.run('UPDATE users SET annual_balance = ?, sick_balance = ? WHERE email = ?', [newAnnual, newSick, user.email]);
+        }
+        logAudit(req.user.email, 'LEAVE_ACCRUED_GLOBALLY', 'Triggered annual leave allocation (15 Annual, 10 Sick)');
+        res.json({ success: true, message: 'Company-wide leave accrued (+15 Annual, +10 Sick days)' });
+    } catch (err) {
+        console.error('Accrual Error:', err);
+        res.status(500).json({ success: false, message: 'Database error while allocating leave.' });
+    }
+});
+
 app.put('/api/admin/users/:email', authenticateToken, isAdmin, [
     body('name').notEmpty(),
     body('role').isIn(['employee', 'manager', 'admin']),

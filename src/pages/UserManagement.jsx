@@ -105,6 +105,24 @@ export default function UserManagement({ token }) {
         }
     };
 
+    const handleAccrueLeave = async () => {
+        if (!window.confirm('Are you sure you want to trigger the automatic yearly leave accrual? This will add 15 Annual and 10 Sick days to ALL users.')) return;
+        setStatus({ type: 'info', message: 'Accruing company-wide leave...' });
+        try {
+            const res = await api.post('/api/admin/accrue-leave', {}, token);
+            const data = await res.json();
+            if (res.ok) {
+                setStatus({ type: 'success', message: data.message });
+                fetchUsers();
+            } else {
+                setStatus({ type: 'error', message: data.message || 'Accrual failed' });
+            }
+        } catch (err) {
+            console.error(err);
+            setStatus({ type: 'error', message: 'Network error. Failed to trigger accrual.' });
+        }
+    };
+
     return (
         <div className="user-management">
             <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -112,7 +130,10 @@ export default function UserManagement({ token }) {
                     <h1>User Management</h1>
                     <p>Manage system users, roles, and leave balances.</p>
                 </div>
-                <button className="btn btn-primary" onClick={handleAdd}>+ Add User</button>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                    <button className="btn btn-outline" style={{ borderColor: 'var(--border)' }} onClick={handleAccrueLeave}>📅 Trigger Yearly Accrual</button>
+                    <button className="btn btn-primary" onClick={handleAdd}>+ Add User</button>
+                </div>
             </div>
 
             {status.message && (
