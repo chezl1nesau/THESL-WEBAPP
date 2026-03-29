@@ -10,20 +10,27 @@ const onRefreshed = (token) => {
     refreshSubscribers = [];
 };
 
-// Backend API URL - Render production server
+// Production Backend URL
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://thesl-backend.onrender.com';
 
-// Retry logic helper with exponential backoff
-const fetchWithRetry = async (fullUrl, options, maxRetries = 3) => {
+// Improved retry logic to handle Render "Cold Starts" (takes up to 60s)
+const fetchWithRetry = async (fullUrl, options, maxRetries = 5) => {
     let lastError;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
-            return await fetch(fullUrl, options);
+            // Increase timeout as retries progress
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), 15000 + (attempt * 10000));
+            
+            const response = await fetch(fullUrl, { ...options, signal: controller.signal });
+            clearTimeout(id);
+            return response;
         } catch (error) {
             lastError = error;
+            console.warn(`Fetch attempt ${attempt + 1} failed:`, error.message);
             if (attempt < maxRetries - 1) {
-                // Exponential backoff: 100ms, 200ms, 400ms
-                const delay = Math.pow(2, attempt) * 100;
+                // Exponential backoff: 1s, 2s, 4s, 8s
+                const delay = Math.pow(2, attempt) * 1000;
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
@@ -32,7 +39,6 @@ const fetchWithRetry = async (fullUrl, options, maxRetries = 3) => {
 };
 
 export const apiFetch = async (url, options = {}, token = null) => {
-    // Favor the token from localStorage if available, as it might be fresher
     const currentToken = localStorage.getItem('thesl_hr_token') || token;
     
     const headers = {
@@ -52,9 +58,9 @@ export const apiFetch = async (url, options = {}, token = null) => {
             ...options,
             headers,
             credentials: 'include'
-        }, 3);
+        });
     } catch (err) {
-        // If all retries fail, throw the error to be handled by caller
+        console.error('API Connection Error:', err);
         throw err;
     }
 
@@ -73,32 +79,28 @@ export const apiFetch = async (url, options = {}, token = null) => {
             const refreshResponse = await fetchWithRetry(refreshUrl, {
                 method: 'POST',
                 credentials: 'include'
-            }, 3);
+            });
             const data = await refreshResponse.json();
 
             if (data.success) {
-                localStorage.setItem('thesl_hr_token', data.token); // Sync for other requests
+                localStorage.setItem('thesl_hr_token', data.token);
                 isRefreshing = false;
                 onRefreshed(data.token);
                 return apiFetch(url, { ...options, _retry: true }, data.token);
             } else {
-                // If refresh specifically fails, clear EVERYTHING and force relogin
                 localStorage.removeItem('thesl_hr_token');
                 localStorage.removeItem('thesl_hr_user');
                 window.location.reload();
             }
         } catch (err) {
             isRefreshing = false;
-            // Network error during refresh or other failure
             localStorage.removeItem('thesl_hr_token');
             localStorage.removeItem('thesl_hr_user');
             window.location.reload();
         }
     }
 
-    // Handle 403 specifically if it's not a refresh issue (e.g. invalid permissions or genuinely invalid token)
     if (response.status === 403) {
-        console.error('Session invalid - 403 Forbidden');
         localStorage.removeItem('thesl_hr_token');
         localStorage.removeItem('thesl_hr_user');
         window.location.reload();
@@ -120,14 +122,14 @@ export const api = {
     delete: (url, token) => apiFetch(url, { method: 'DELETE' }, token),
     upload: (url, formData, token) => {
         const headers = {};
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-        return fetchWithRetry(url, {
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+        
+        return fetchWithRetry(fullUrl, {
             method: 'POST',
             body: formData,
             headers,
             credentials: 'include'
-        }, 3);
+        });
     }
 };
