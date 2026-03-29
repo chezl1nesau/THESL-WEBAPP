@@ -11,13 +11,17 @@ ALTER TABLE documents
 
 -- Create compliments table
 CREATE TABLE IF NOT EXISTS compliments (
-    id              BIGSERIAL PRIMARY KEY,
-    recipient_email TEXT,
-    recipient_name  TEXT,
-    given_by        TEXT,
-    given_by_email  TEXT,
-    category        TEXT,
-    message         TEXT,
-    bonus_amount    NUMERIC,
-    date            TEXT
+    id                 BIGSERIAL PRIMARY KEY,
+    recipient_email    TEXT,
+    recipient_name     TEXT,
+    given_by           TEXT,
+    given_by_email     TEXT,
+    category           TEXT,
+    message            TEXT,
+    bonus_amount       NUMERIC,
+    date               TEXT,
+    recipient_comment  TEXT
 );
+
+-- If compliments table already exists, add the column:
+ALTER TABLE compliments ADD COLUMN IF NOT EXISTS recipient_comment TEXT;

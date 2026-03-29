@@ -1060,6 +1060,28 @@ app.delete('/api/compliments/:id', authenticateToken, isAdmin, async (req, res) 
     }
 });
 
+// Recipient adds/updates their own comment on a compliment
+app.put('/api/compliments/:id/comment', authenticateToken, [
+    body('recipient_comment').notEmpty().trim().escape(),
+    validate
+], async (req, res) => {
+    const { id } = req.params;
+    const { recipient_comment } = req.body;
+    try {
+        // Verify this user is the recipient
+        const comp = await db.get('SELECT * FROM compliments WHERE id = ?', [id]);
+        if (!comp) return res.status(404).json({ success: false, message: 'Not found' });
+        if (comp.recipient_email !== req.user.email) {
+            return res.status(403).json({ success: false, message: 'You can only comment on your own compliments' });
+        }
+        await db.run('UPDATE compliments SET recipient_comment = ? WHERE id = ?', [recipient_comment, id]);
+        logAudit(req.user.email, 'COMPLIMENT_COMMENT', `Added response to compliment ID ${id}`);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
 // 11. User Management (Admin Only)
 app.get('/api/admin/users', authenticateToken, isAdmin, async (req, res) => {
     try {
