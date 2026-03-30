@@ -39,6 +39,16 @@ const corsOrigins = requireEnv('CORS_ORIGINS')
 const frontendBaseUrl = process.env.FRONTEND_URL || corsOrigins[0] || 'http://localhost:5173';
 
 // Security Middleware with custom CSP for Vite/React
+app.use(cors({
+    origin: (origin, callback) => callback(null, true),
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    preflightContinue: false,
+    optionsSuccessStatus: 200
+}));
+
+// Security Middleware with custom CSP for Vite/React
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
@@ -55,12 +65,6 @@ app.use(helmet({
     },
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-app.use(cors({
-    origin: (origin, callback) => callback(null, true),
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
 
 // Move rate limiters back
 const limiter = rateLimit({
