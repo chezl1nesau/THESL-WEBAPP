@@ -1020,7 +1020,16 @@ app.delete('/api/documents/:id', authenticateToken, isAdmin, async (req, res) =>
 // 13. Compliments (Performance-based Commission)
 app.get('/api/compliments', authenticateToken, async (req, res) => {
     try {
-        const rows = await db.all('SELECT * FROM compliments ORDER BY id DESC');
+        let rows;
+        if (req.user.role === 'admin' || req.user.role === 'manager') {
+            rows = await db.all('SELECT * FROM compliments ORDER BY id DESC');
+        } else {
+            rows = await db.all('SELECT * FROM compliments WHERE status IN (?, ?) ORDER BY id DESC', ['approved', req.user.email]);
+            // Re-fetch because SQL queries with IN clauses can be tricky with different logic needs:
+            // For regular employees, we return all approved OR pending ones that they either gave or received
+            rows = await db.all('SELECT * FROM compliments WHERE status = ? OR recipient_email = ? OR given_by_email = ? ORDER BY id DESC', 
+                ['approved', req.user.email, req.user.email]);
+        }
         res.json(rows);
     } catch (err) {
         logAudit(req.user?.email || 'public', 'COMPLIMENT_VIEW_FAILURE', `Error viewing compliments: ${err.message}`);
@@ -1028,27 +1037,44 @@ app.get('/api/compliments', authenticateToken, async (req, res) => {
     }
 });
 
-app.post('/api/compliments', authenticateToken, isManager, [
+app.post('/api/compliments', authenticateToken, [
     body('recipient_email').isEmail().normalizeEmail(),
     body('recipient_name').notEmpty().trim().escape(),
     body('category').isIn(['Sales Achievement', 'Client Satisfaction', 'Team Leadership', 'Innovation', 'Above & Beyond', 'Perfect Attendance', 'Top Performer']).withMessage('Invalid category'),
     body('message').notEmpty().trim().escape(),
     body('bonus_amount').optional({ nullable: true }).isFloat({ min: 0 }).withMessage('Bonus must be a positive number'),
+    body('period').notEmpty().withMessage('Monthly period is required'),
     validate
 ], async (req, res) => {
-    const { recipient_email, recipient_name, category, message, bonus_amount } = req.body;
+    const { recipient_email, recipient_name, category, message, bonus_amount, period } = req.body;
     const given_by = req.user.name || req.user.email;
     const given_by_email = req.user.email;
     const date = new Date().toLocaleDateString('en-US');
+    
+    // Auto-approve if manager/admin
+    const status = (req.user.role === 'admin' || req.user.role === 'manager') ? 'approved' : 'pending';
+
     try {
         const result = await db.run(
-            'INSERT INTO compliments (recipient_email, recipient_name, given_by, given_by_email, category, message, bonus_amount, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [recipient_email, recipient_name, given_by, given_by_email, category, message, bonus_amount || null, date]
+            'INSERT INTO compliments (recipient_email, recipient_name, given_by, given_by_email, category, message, bonus_amount, date, status, period) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [recipient_email, recipient_name, given_by, given_by_email, category, message, bonus_amount || null, date, status, period]
         );
-        logAudit(req.user.email, 'COMPLIMENT_CREATE', `Gave compliment to ${recipient_email}: ${category}`);
-        res.json({ success: true, id: result.lastID });
+        logAudit(req.user.email, 'COMPLIMENT_CREATE', `Gave compliment to ${recipient_email}: ${category} (Status: ${status})`);
+        res.json({ success: true, id: result.lastID, status });
     } catch (err) {
         logAudit(req.user.email, 'COMPLIMENT_CREATE_FAILURE', `Error creating compliment: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+// Admin Approve Compliment
+app.put('/api/compliments/:id/approve', authenticateToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.run('UPDATE compliments SET status = ? WHERE id = ?', ['approved', id]);
+        logAudit(req.user.email, 'COMPLIMENT_APPROVE', `Approved compliment ID ${id}`);
+        res.json({ success: true });
+    } catch (err) {
         res.status(500).json({ success: false, message: 'Database error' });
     }
 });
