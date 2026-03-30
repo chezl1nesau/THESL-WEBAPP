@@ -14,6 +14,7 @@ import {
     User, 
     ShieldCheck, 
     Users,
+    Bell,
     LogOut,
     Menu,
     X
@@ -31,6 +32,7 @@ export default function Sidebar({ user, onLogout, isOpen, onToggle }) {
         { id: 'requests', label: 'Requests', icon: FileClock, path: '/requests' },
         { id: 'performance', label: 'Performance', icon: TrendingUp, path: '/performance' },
         { id: 'compliments', label: 'Compliments', icon: Award, path: '/compliments' },
+        { id: 'notifications', label: 'Notifications', icon: Bell, path: '/notifications' },
         { id: 'profile', label: 'Profile', icon: User, path: '/profile' },
     ];
 

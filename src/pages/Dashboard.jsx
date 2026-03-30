@@ -228,26 +228,32 @@ function EmployeeDashboard({ user, token }) {
 
 export function ManagementDashboard({ token }) {
     const [pending, setPending] = useState([]);
+    const [compliments, setCompliments] = useState([]);
     const [error, setError] = useState('');
     const [status, setStatus] = useState({ type: '', message: '' });
 
-    useEffect(() => {
+    const fetchData = React.useCallback(async () => {
         setError('');
-        api.get('/api/admin/pending', token)
-            .then(res => res.json())
-            .then(data => {
-                if (Array.isArray(data)) {
-                    setPending(data);
-                } else {
-                    console.warn('Pending approvals data is not an array:', data);
-                    setPending([]);
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                setError('Failed to load pending approvals');
-            });
+        try {
+            const [pendingRes, complRes] = await Promise.all([
+                api.get('/api/admin/pending', token),
+                api.get('/api/compliments', token)
+            ]);
+            
+            const pendingData = await pendingRes.json();
+            const complData = await complRes.json();
+            
+            if (Array.isArray(pendingData)) setPending(pendingData);
+            if (Array.isArray(complData)) setCompliments(complData);
+        } catch (err) {
+            console.error(err);
+            setError('Failed to load dashboard data');
+        }
     }, [token]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
 
     const handleAction = async (id, action) => {
         setStatus({ type: 'info', message: 'Processing...' });
@@ -267,11 +273,15 @@ export function ManagementDashboard({ token }) {
         }
     };
 
+    const approvedCompliments = compliments.filter(c => c.status === 'approved');
+    const totalBonuses = approvedCompliments.reduce((sum, c) => sum + parseFloat(c.bonus_amount || 0), 0);
+    const pendingComplimentsCount = compliments.filter(c => c.status === 'pending').length;
+
     return (
         <>
             <div className="page-header">
                 <h1>Management Dashboard</h1>
-                <p>Manage employees and approvals</p>
+                <p>Manage employees and performance recognitions</p>
             </div>
 
             {error && (
@@ -289,35 +299,35 @@ export function ManagementDashboard({ token }) {
             <div className="stats-grid">
                 <div className="stat-card">
                     <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                        <div className="stat-label">Total Employees</div>
-                        <Users size={20} color="var(--accent)" />
+                        <div className="stat-label">Total Recognition</div>
+                        <Activity size={20} color="var(--accent)" />
                     </div>
-                    <div className="stat-value">25</div>
-                    <div className="stat-subtitle">Across all teams</div>
+                    <div className="stat-value">{approvedCompliments.length}</div>
+                    <div className="stat-subtitle">{pendingComplimentsCount} awaiting approval</div>
+                </div>
+                <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
+                    <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <div className="stat-label">Performance Bonuses</div>
+                        <ShieldCheck size={20} color="#10b981" />
+                    </div>
+                    <div className="stat-value">R {totalBonuses.toLocaleString('en-ZA', { minimumFractionDigits: 0 })}</div>
+                    <div className="stat-subtitle">Total paid to date</div>
                 </div>
                 <div className="stat-card">
                     <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                        <div className="stat-label">Approvals</div>
+                        <div className="stat-label">Pending Reviews</div>
                         <ShieldCheck size={20} color="#60a5fa" />
                     </div>
                     <div className="stat-value">{pending.length}</div>
-                    <div className="stat-subtitle">Awaiting action</div>
+                    <div className="stat-subtitle">Awaiting leave approvals</div>
                 </div>
                 <div className="stat-card">
                     <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                        <div className="stat-label">Open Tickets</div>
-                        <LifeBuoy size={20} color="#fb7185" />
+                        <div className="stat-label">Attendance Today</div>
+                        <Users size={20} color="#fb7185" />
                     </div>
-                    <div className="stat-value">5</div>
-                    <div className="stat-subtitle">Support requests</div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                        <div className="stat-label">Present</div>
-                        <Activity size={20} color="#34d399" />
-                    </div>
-                    <div className="stat-value">22</div>
-                    <div className="stat-subtitle">On duty today</div>
+                    <div className="stat-value">22 / 25</div>
+                    <div className="stat-subtitle">Across all teams</div>
                 </div>
             </div>
 

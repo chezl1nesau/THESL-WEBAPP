@@ -20,8 +20,26 @@ CREATE TABLE IF NOT EXISTS compliments (
     message            TEXT,
     bonus_amount       NUMERIC,
     date               TEXT,
+    status             TEXT DEFAULT 'pending',
+    period             TEXT,
     recipient_comment  TEXT
 );
 
--- If compliments table already exists, add the column:
+-- Ensure all columns exist (if table was already created)
+ALTER TABLE compliments ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+ALTER TABLE compliments ADD COLUMN IF NOT EXISTS period TEXT;
 ALTER TABLE compliments ADD COLUMN IF NOT EXISTS recipient_comment TEXT;
+
+-- Create notifications table
+CREATE TABLE IF NOT EXISTS notifications (
+    id                 BIGSERIAL PRIMARY KEY,
+    user_email         TEXT NOT NULL,
+    title              TEXT NOT NULL,
+    message            TEXT NOT NULL,
+    type               TEXT DEFAULT 'info',
+    is_read            BOOLEAN DEFAULT FALSE,
+    created_at         TIMESTAMPTZ DEFAULT NOW(),
+    related_id         BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_email, is_read);

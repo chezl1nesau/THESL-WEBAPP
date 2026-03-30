@@ -465,18 +465,19 @@ app.post('/api/auth/reset-password', authLimiter, [
     }
 });
 
-app.post('/api/auth/refresh', (req, res) => {
+app.post('/api/auth/refresh', async (req, res) => {
     const refreshToken = req.cookies.refreshToken;
     if (!refreshToken) return res.status(401).json({ success: false, message: 'No refresh token' });
 
-    jwt.verify(refreshToken, REFRESH_TOKEN_SECRET, (err, decoded) => {
+    jwt.verify(refreshToken, REFRESH_TOKEN_SECRET, async (err, decoded) => {
         if (err) {
             logAudit(decoded?.email || 'unknown', 'REFRESH_TOKEN_FAILURE', `Invalid or expired refresh token from ${req.ip}`);
             return res.status(403).json({ success: false, message: 'Invalid refresh token' });
         }
 
-        db.get('SELECT * FROM users WHERE email = ?', [decoded.email], (err, user) => {
-            if (err || !user) {
+        try {
+            const user = await db.get('SELECT * FROM users WHERE email = ?', [decoded.email]);
+            if (!user) {
                 logAudit(decoded.email, 'REFRESH_TOKEN_FAILURE', `User not found for refresh token from ${req.ip}`);
                 return res.status(403).json({ success: false, message: 'User not found' });
             }
@@ -488,7 +489,10 @@ app.post('/api/auth/refresh', (req, res) => {
             );
             logAudit(user.email, 'REFRESH_TOKEN_SUCCESS', `Access token refreshed from ${req.ip}`);
             res.json({ success: true, token: newToken });
-        });
+        } catch (dbErr) {
+            logAudit(decoded.email, 'REFRESH_TOKEN_FAILURE', `DB Error: ${dbErr.message}`);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
     });
 });
 
@@ -607,6 +611,12 @@ app.post('/api/announcements', authenticateToken, isAdmin, [
             'INSERT INTO announcements (type, title, content, date, author, pinned) VALUES (?, ?, ?, ?, ?, ?)',
             [type, title, content || '', date, author || 'Admin', pinned ? 1 : 0]
         );
+        
+        // Notify everyone (this might be heavy, but let's assume it's okay for now)
+        const allUsers = await db.all('SELECT email FROM users');
+        for (const u of allUsers) {
+            await createNotification(u.email, 'New Announcement 📢', title, 'info', result.lastID);
+        }
         logAudit(req.user.email, 'ANNOUNCEMENT_CREATE', `Created announcement: ${title}`);
         res.json({ id: result.lastID, type, title, content, date, author, pinned });
     } catch (err) {
@@ -679,6 +689,11 @@ app.post('/api/leave/annual', authenticateToken, [
             'INSERT INTO pending_approvals (reference_id, user_email, name, type, duration, details, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [result.lastID, user_email, name, 'Annual', duration, `Annual Leave: ${startDate} to ${endDate}`, submitDate]
         );
+        
+        const admins = await db.all('SELECT email FROM users WHERE role IN (?, ?)', ['admin', 'manager']);
+        for (const admin of admins) {
+            await createNotification(admin.email, 'New Leave Request! 📅', `${req.user.name} submitted an Annual Leave request.`, 'info', result.lastID);
+        }
         logAudit(req.user.email, 'ANNUAL_LEAVE_REQUEST', `Requested annual leave from ${startDate} to ${endDate}`);
         res.json({ id: result.lastID, user_email, startDate, endDate, duration, reason, status, submitDate });
     } catch (err) {
@@ -717,8 +732,13 @@ app.post('/api/leave/sick', authenticateToken, [
         
         await db.run(
             'INSERT INTO pending_approvals (reference_id, user_email, name, type, duration, details, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [result.lastID, user_email, name, 'Sick', duration, type, date]
+            [result.lastID, user_email, name, 'Sick', duration, `Sick Leave: ${type} on ${date}`, date]
         );
+        
+        const admins = await db.all('SELECT email FROM users WHERE role IN (?, ?)', ['admin', 'manager']);
+        for (const admin of admins) {
+            await createNotification(admin.email, 'New Sick Leave! 🤒', `${req.user.name} recorded a Sick Leave instance.`, 'error', result.lastID);
+        }
         logAudit(req.user.email, 'SICK_LEAVE_REQUEST', `Requested sick leave for ${duration} days on ${date}`);
         res.json({ id: result.lastID, user_email, type, duration, fileName, status, date });
     } catch (err) {
@@ -799,6 +819,7 @@ app.post('/api/admin/action', authenticateToken, isManager, [
                         [user.sick_balance - pending.duration, user.sick_used + pending.duration, pending.user_email]);
                 }
             }
+            await createNotification(pending.user_email, 'Leave Approved ✅', `Your ${pending.type} leave has been approved.`, 'success');
             logAudit(req.user.email, 'APPROVAL_ACTION', `Approved ${pending.type} request for ${pending.user_email} (ID: ${pending.reference_id})`);
         } else if (action === 'Reject') {
             if (pending.type === 'Annual') {
@@ -806,6 +827,7 @@ app.post('/api/admin/action', authenticateToken, isManager, [
             } else if (pending.type === 'Sick') {
                 await db.run('UPDATE sick_leave SET status = ? WHERE id = ?', ['Rejected', pending.reference_id]);
             }
+            await createNotification(pending.user_email, 'Leave Rejected ❌', `Your ${pending.type} leave has been rejected.`, 'error');
             logAudit(req.user.email, 'APPROVAL_ACTION', `Rejected ${pending.type} request for ${pending.user_email} (ID: ${pending.reference_id})`);
         }
         
@@ -1059,6 +1081,18 @@ app.post('/api/compliments', authenticateToken, [
             'INSERT INTO compliments (recipient_email, recipient_name, given_by, given_by_email, category, message, bonus_amount, date, status, period) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [recipient_email, recipient_name, given_by, given_by_email, category, message, bonus_amount || null, date, status, period]
         );
+        
+        const isApproved = status === 'approved';
+        if (isApproved) {
+            await createNotification(
+                recipient_email, 
+                'New Recognition! 🏆', 
+                `You received a recognition from ${req.user.name} for ${category}.`,
+                'success',
+                result.lastID
+            );
+        }
+
         logAudit(req.user.email, 'COMPLIMENT_CREATE', `Gave compliment to ${recipient_email}: ${category} (Status: ${status})`);
         res.json({ success: true, id: result.lastID, status });
     } catch (err) {
@@ -1072,6 +1106,18 @@ app.put('/api/compliments/:id/approve', authenticateToken, isAdmin, async (req, 
     const { id } = req.params;
     try {
         await db.run('UPDATE compliments SET status = ? WHERE id = ?', ['approved', id]);
+        
+        const comp = await db.get('SELECT * FROM compliments WHERE id = ?', [id]);
+        if (comp) {
+            await createNotification(
+                comp.recipient_email,
+                'Recognition Approved! ✨',
+                `Your recognition for ${comp.category} has been approved.`,
+                'success',
+                id
+            );
+        }
+        
         logAudit(req.user.email, 'COMPLIMENT_APPROVE', `Approved compliment ID ${id}`);
         res.json({ success: true });
     } catch (err) {
@@ -1246,6 +1292,46 @@ app.get('/api/calendar', authenticateToken, async (req, res) => {
         res.status(500).json({ success: false, message: 'Database error' });
     }
 });
+
+// 14. Notifications
+app.get('/api/notifications', authenticateToken, async (req, res) => {
+    try {
+        const rows = await db.all('SELECT * FROM notifications WHERE user_email = ? ORDER BY created_at DESC LIMIT 50', [req.user.email]);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+app.put('/api/notifications/:id/read', authenticateToken, async (req, res) => {
+    try {
+        await db.run('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_email = ?', [req.params.id, req.user.email]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+app.put('/api/notifications/read-all', authenticateToken, async (req, res) => {
+    try {
+        await db.run('UPDATE notifications SET is_read = 1 WHERE user_email = ?', [req.user.email]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+async function createNotification(email, title, message, type = 'info', relatedId = null) {
+    if (!db) return;
+    try {
+        await db.run(
+            'INSERT INTO notifications (user_email, title, message, type, related_id) VALUES (?, ?, ?, ?, ?)',
+            [email, title, message, type, relatedId]
+        );
+    } catch (err) {
+        console.error('Notification creation failed', err);
+    }
+}
 
 // Catch-all handler for any request that doesn't match an API route
 if (fs.existsSync(distPath)) {

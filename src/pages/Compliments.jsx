@@ -161,7 +161,16 @@ export default function Compliments({ user, token }) {
         .filter(c => c.recipient_email === user.email && c.bonus_amount)
         .reduce((sum, c) => sum + parseFloat(c.bonus_amount || 0), 0);
 
-    const periods = [...new Set(compliments.map(c => c.period).filter(Boolean))];
+    const currentYear = new Date().getFullYear();
+    const periods = [...new Set([
+        ...MONTHS.map(m => `${m} ${currentYear}`),
+        ...compliments.map(c => c.period).filter(Boolean)
+    ])].sort((a, b) => {
+        const [mA, yA] = a.split(' ');
+        const [mB, yB] = b.split(' ');
+        if (yA !== yB) return b.split(' ')[1] - a.split(' ')[1]; // Descending year
+        return MONTHS.indexOf(mB) - MONTHS.indexOf(mA); // Descending month
+    });
     
     const filtered = (activeTab === 'Pending' ? pendingCompliments : approvedCompliments).filter(c => {
         const matchCat = filterCategory === 'All' || c.category === filterCategory;
@@ -457,10 +466,22 @@ export default function Compliments({ user, token }) {
                 .filter-select {
                     background: var(--bg-card);
                     border: 1px solid var(--border);
-                    color: var(--text);
-                    padding: 0.4rem 0.75rem;
+                    color: var(--text-primary);
+                    padding: 0.4rem 2.25rem 0.4rem 0.75rem;
                     border-radius: 8px;
                     font-size: 0.85rem;
+                    appearance: none;
+                    -webkit-appearance: none;
+                    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+                    background-repeat: no-repeat;
+                    background-position: right 0.75rem center;
+                    background-size: 1.1em;
+                    cursor: pointer;
+                }
+                .filter-select:focus {
+                    border-color: var(--accent);
+                    outline: none;
+                    box-shadow: 0 0 0 3px var(--accent-glow);
                 }
 
                 .recognition-card {

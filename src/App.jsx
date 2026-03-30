@@ -16,6 +16,7 @@ import Compliments from './pages/Compliments';
 import CalendarPage from './pages/CalendarPage';
 import UserManagement from './pages/UserManagement';
 import ForgotPassword from './pages/ForgotPassword';
+import Notifications from './pages/Notifications';
 import './index.css';
 
 function PageWrapper({ children }) {
@@ -50,6 +51,7 @@ function AuthenticatedApp({ user, setUser, token, onLogout }) {
                 <Route path="calendar" element={<PageWrapper><CalendarPage user={user} token={token} /></PageWrapper>} />
                 <Route path="users" element={user.role === 'admin' ? <PageWrapper><UserManagement token={token} /></PageWrapper> : <Navigate to="/dashboard" />} />
                 <Route path="profile" element={<PageWrapper><Profile user={user} setUser={setUser} token={token} /></PageWrapper>} />
+                <Route path="notifications" element={<PageWrapper><Notifications user={user} token={token} /></PageWrapper>} />
                 <Route path="admin" element={user.role === 'admin' ? <PageWrapper><ManagementDashboard token={token} /></PageWrapper> : <Navigate to="/dashboard" />} />
                 <Route index element={<Navigate to="dashboard" />} />
                 <Route path="*" element={<Navigate to="dashboard" />} />
