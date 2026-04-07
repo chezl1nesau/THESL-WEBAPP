@@ -17,7 +17,9 @@ import {
     Bell,
     LogOut,
     Menu,
-    X
+    X,
+    BookOpen,
+    Fingerprint
 } from 'lucide-react';
 
 export default function Sidebar({ user, onLogout, isOpen, onToggle }) {
@@ -41,7 +43,9 @@ export default function Sidebar({ user, onLogout, isOpen, onToggle }) {
     }
     if (user.role === 'admin') {
         navItems.push({ id: 'users', label: 'Users', icon: Users, path: '/users' });
+        navItems.push({ id: 'audit-logs', label: 'Audit Logs', icon: Fingerprint, path: '/audit-logs' });
     }
+    navItems.push({ id: 'directory', label: 'Directory', icon: BookOpen, path: '/directory' });
 
     return (
         <>

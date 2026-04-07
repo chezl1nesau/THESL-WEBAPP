@@ -780,6 +780,16 @@ app.post('/api/lateness', authenticateToken, [
 });
 
 // 8. Admin/Manager Dashboard Approvals
+app.get('/api/admin/audit-logs', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const rows = await db.all('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 500');
+        res.json(rows);
+    } catch (err) {
+        logAudit(req.user.email, 'AUDIT_LOG_VIEW_FAILURE', `Error viewing audit logs: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
 app.get('/api/admin/pending', authenticateToken, isManager, async (req, res) => {
     try {
         const rows = await db.all('SELECT * FROM pending_approvals');

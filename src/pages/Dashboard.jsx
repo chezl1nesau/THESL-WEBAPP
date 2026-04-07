@@ -1,4 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import AnimatedPage from '../components/AnimatedPage';
+
+const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="custom-tooltip">
+                <p className="custom-tooltip-label">{label}</p>
+                <p className="custom-tooltip-value">{`${payload[0].value} Days`}</p>
+            </div>
+        );
+    }
+    return null;
+};
+
+// ... existing code (localizer, etc.) unchanged ...
 import { api } from '../utils/api';
 import { DEMO_ANNOUNCEMENTS } from '../data/mockData';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
@@ -407,9 +421,15 @@ export function ManagementDashboard({ token }) {
 
 export default function Dashboard({ user, token }) {
     return (
-        <div style={{ paddingBottom: '2rem' }}>
-            {user.role === 'admin' || user.role === 'manager' ? <ManagementDashboard token={token} /> : <EmployeeDashboard user={user} token={token} />}
-            <CompanyCalendar token={token} />
-        </div>
+        <AnimatedPage>
+            <div style={{ paddingBottom: '2rem' }}>
+                {user.role === 'admin' || user.role === 'manager' ? (
+                    <ManagementDashboard token={token} />
+                ) : (
+                    <EmployeeDashboard user={user} token={token} />
+                )}
+                <CompanyCalendar token={token} />
+            </div>
+        </AnimatedPage>
     );
 }

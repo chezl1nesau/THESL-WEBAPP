@@ -15,6 +15,8 @@ import Documents from './pages/Documents';
 import Compliments from './pages/Compliments';
 import CalendarPage from './pages/CalendarPage';
 import UserManagement from './pages/UserManagement';
+import AuditLogs from './pages/AuditLogs';
+import EmployeeDirectory from './pages/EmployeeDirectory';
 import ForgotPassword from './pages/ForgotPassword';
 import Notifications from './pages/Notifications';
 import './index.css';
@@ -50,6 +52,8 @@ function AuthenticatedApp({ user, setUser, token, onLogout }) {
                 <Route path="compliments" element={<PageWrapper><Compliments user={user} token={token} /></PageWrapper>} />
                 <Route path="calendar" element={<PageWrapper><CalendarPage user={user} token={token} /></PageWrapper>} />
                 <Route path="users" element={user.role === 'admin' ? <PageWrapper><UserManagement token={token} /></PageWrapper> : <Navigate to="/dashboard" />} />
+                <Route path="audit-logs" element={user.role === 'admin' ? <PageWrapper><AuditLogs token={token} /></PageWrapper> : <Navigate to="/dashboard" />} />
+                <Route path="directory" element={<PageWrapper><EmployeeDirectory token={token} /></PageWrapper>} />
                 <Route path="profile" element={<PageWrapper><Profile user={user} setUser={setUser} token={token} /></PageWrapper>} />
                 <Route path="notifications" element={<PageWrapper><Notifications user={user} token={token} /></PageWrapper>} />
                 <Route path="admin" element={user.role === 'admin' ? <PageWrapper><ManagementDashboard token={token} /></PageWrapper> : <Navigate to="/dashboard" />} />
