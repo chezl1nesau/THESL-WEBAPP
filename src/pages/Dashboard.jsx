@@ -1,18 +1,5 @@
-import AnimatedPage from '../components/AnimatedPage';
-
-const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-        return (
-            <div className="custom-tooltip">
-                <p className="custom-tooltip-label">{label}</p>
-                <p className="custom-tooltip-value">{`${payload[0].value} Days`}</p>
-            </div>
-        );
-    }
-    return null;
-};
-
-// ... existing code (localizer, etc.) unchanged ...
+import React, { useState, useEffect, useCallback } from 'react';
+import AnimatedPage, { Skeleton } from '../components/AnimatedPage';
 import { api } from '../utils/api';
 import { DEMO_ANNOUNCEMENTS } from '../data/mockData';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
@@ -33,6 +20,19 @@ import {
     Activity 
 } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
+
+const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="custom-tooltip">
+                <p className="custom-tooltip-label">{label}</p>
+                <p className="custom-tooltip-value">{`${payload[0].value} Days`}</p>
+            </div>
+        );
+    }
+    return null;
+};
+
 
 const locales = {
   'en-US': enUS,
@@ -125,14 +125,55 @@ function CompanyCalendar({ token }) {
 }
 
 function EmployeeDashboard({ user, token }) {
-    const [balances, setBalances] = useState({ annual_balance: 15, sick_balance: 10 });
+    const [balances, setBalances] = useState({ annual_balance: 0, sick_balance: 0 });
+    const [latenessCount, setLatenessCount] = useState(0);
+    const [openRequestsCount, setOpenRequestsCount] = useState(0);
+    const [recentActivity, setRecentActivity] = useState([]);
+    const [loading, setLoading] = useState(true);
     
     useEffect(() => {
         if (!token) return;
-        api.get(`/api/user/balances?email=${user.email}`, token)
-            .then(res => res.json())
-            .then(data => setBalances(data))
-            .catch(console.error);
+        
+        const fetchDashboardData = async () => {
+            try {
+                const [balRes, latRes, reqRes] = await Promise.all([
+                    api.get(`/api/user/balances?email=${user.email}`, token),
+                    api.get('/api/lateness', token),
+                    api.get('/api/requests', token)
+                ]);
+                
+                const balData = await balRes.json();
+                const latData = await latRes.json();
+                const reqData = await reqRes.json();
+                
+                setBalances(balData);
+                
+                // Process Lateness
+                if (Array.isArray(latData)) {
+                    // Filter just this user's lateness
+                    const myLate = latData.filter(L => L.user_email === user.email);
+                    // Filter for this month
+                    const currentMonth = new Date().getMonth();
+                    const thisMonthLate = myLate.filter(L => new Date(L.date).getMonth() === currentMonth);
+                    setLatenessCount(thisMonthLate.length);
+                }
+                
+                // Process Requests & Activity
+                if (Array.isArray(reqData)) {
+                    // Open = Pending
+                    const pending = reqData.filter(r => r.status?.toLowerCase() === 'pending');
+                    setOpenRequestsCount(pending.length);
+                    // Recent Activity
+                    setRecentActivity(reqData.slice(0, 3));
+                }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchDashboardData();
     }, [user.email, token]);
 
     return (
@@ -148,7 +189,7 @@ function EmployeeDashboard({ user, token }) {
                         <div className="stat-label">Annual Leave</div>
                         <Palmtree size={20} color="var(--accent)" />
                     </div>
-                    <div className="stat-value">{balances.annual_balance} Days</div>
+                    <div className="stat-value">{loading ? <Skeleton text style={{width: 40, marginTop: 10}}/> : balances.annual_balance + ' Days'}</div>
                     <div className="stat-subtitle">Remaining this year</div>
                 </div>
                 <div className="stat-card">
@@ -156,7 +197,7 @@ function EmployeeDashboard({ user, token }) {
                         <div className="stat-label">Sick Leave</div>
                         <Stethoscope size={20} color="#fb7185" />
                     </div>
-                    <div className="stat-value">{balances.sick_balance} Days</div>
+                    <div className="stat-value">{loading ? <Skeleton text style={{width: 40, marginTop: 10}}/> : balances.sick_balance + ' Days'}</div>
                     <div className="stat-subtitle">Remaining this year</div>
                 </div>
                 <div className="stat-card">
@@ -164,7 +205,7 @@ function EmployeeDashboard({ user, token }) {
                         <div className="stat-label">Late Instances</div>
                         <Clock size={20} color="#facc15" />
                     </div>
-                    <div className="stat-value">2</div>
+                    <div className="stat-value">{loading ? <Skeleton text style={{width: 30, marginTop: 10}}/> : latenessCount}</div>
                     <div className="stat-subtitle">This month</div>
                 </div>
                 <div className="stat-card">
@@ -172,7 +213,7 @@ function EmployeeDashboard({ user, token }) {
                         <div className="stat-label">Open Requests</div>
                         <FileClock size={20} color="#60a5fa" />
                     </div>
-                    <div className="stat-value">1</div>
+                    <div className="stat-value">{loading ? <Skeleton text style={{width: 30, marginTop: 10}}/> : openRequestsCount}</div>
                     <div className="stat-subtitle">Pending approval</div>
                 </div>
             </div>
@@ -217,21 +258,27 @@ function EmployeeDashboard({ user, token }) {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td>Leave Request - Annual</td>
-                                <td>Mar 15, 2026</td>
-                                <td><span className="badge badge-warning">Pending</span></td>
-                            </tr>
-                            <tr>
-                                <td>Sick Leave Certificate</td>
-                                <td>Mar 14, 2026</td>
-                                <td><span className="badge badge-success">Uploaded</span></td>
-                            </tr>
-                            <tr>
-                                <td>IT Support Ticket</td>
-                                <td>Mar 12, 2026</td>
-                                <td><span className="badge badge-success">Resolved</span></td>
-                            </tr>
+                            {loading ? (
+                                <tr>
+                                    <td colSpan="3" style={{textAlign: 'center', padding: '2rem', color: 'var(--text-light)'}}>Loading...</td>
+                                </tr>
+                            ) : recentActivity.length === 0 ? (
+                                <tr>
+                                    <td colSpan="3" style={{textAlign: 'center', padding: '2rem', color: 'var(--text-light)'}}>No recent activity</td>
+                                </tr>
+                            ) : (
+                                recentActivity.map((req, i) => (
+                                    <tr key={i}>
+                                        <td>{req.title || req.type}</td>
+                                        <td>{req.date}</td>
+                                        <td>
+                                            <span className={`badge badge-${req.status?.toLowerCase() === 'pending' ? 'warning' : req.status?.toLowerCase() === 'resolved' || req.status === 'success' || req.status === 'Approved' ? 'success' : 'danger'}`}>
+                                                {req.status}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>
@@ -245,6 +292,7 @@ export function ManagementDashboard({ token }) {
     const [compliments, setCompliments] = useState([]);
     const [error, setError] = useState('');
     const [status, setStatus] = useState({ type: '', message: '' });
+    const [loading, setLoading] = useState(true);
 
     const fetchData = React.useCallback(async () => {
         setError('');
@@ -262,6 +310,8 @@ export function ManagementDashboard({ token }) {
         } catch (err) {
             console.error(err);
             setError('Failed to load dashboard data');
+        } finally {
+            setLoading(false);
         }
     }, [token]);
 
@@ -316,15 +366,15 @@ export function ManagementDashboard({ token }) {
                         <div className="stat-label">Total Recognition</div>
                         <Activity size={20} color="var(--accent)" />
                     </div>
-                    <div className="stat-value">{approvedCompliments.length}</div>
-                    <div className="stat-subtitle">{pendingComplimentsCount} awaiting approval</div>
+                    <div className="stat-value">{loading ? <Skeleton text style={{width: 30, marginTop: 10}}/> : approvedCompliments.length}</div>
+                    <div className="stat-subtitle">{loading ? <Skeleton text style={{width: 100, marginTop: 4}}/> : `${pendingComplimentsCount} awaiting approval`}</div>
                 </div>
                 <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
                     <div className="stat-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
                         <div className="stat-label">Performance Bonuses</div>
                         <ShieldCheck size={20} color="#10b981" />
                     </div>
-                    <div className="stat-value">R {totalBonuses.toLocaleString('en-ZA', { minimumFractionDigits: 0 })}</div>
+                    <div className="stat-value">{loading ? <Skeleton text style={{width: 60, marginTop: 10}}/> : `R ${totalBonuses.toLocaleString('en-ZA', { minimumFractionDigits: 0 })}`}</div>
                     <div className="stat-subtitle">Total paid to date</div>
                 </div>
                 <div className="stat-card">
@@ -332,7 +382,7 @@ export function ManagementDashboard({ token }) {
                         <div className="stat-label">Pending Reviews</div>
                         <ShieldCheck size={20} color="#60a5fa" />
                     </div>
-                    <div className="stat-value">{pending.length}</div>
+                    <div className="stat-value">{loading ? <Skeleton text style={{width: 30, marginTop: 10}}/> : pending.length}</div>
                     <div className="stat-subtitle">Awaiting leave approvals</div>
                 </div>
                 <div className="stat-card">
@@ -340,7 +390,7 @@ export function ManagementDashboard({ token }) {
                         <div className="stat-label">Attendance Today</div>
                         <Users size={20} color="#fb7185" />
                     </div>
-                    <div className="stat-value">22 / 25</div>
+                    <div className="stat-value">{loading ? <Skeleton text style={{width: 50, marginTop: 10}}/> : '22 / 25'}</div>
                     <div className="stat-subtitle">Across all teams</div>
                 </div>
             </div>

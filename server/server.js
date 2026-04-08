@@ -628,7 +628,14 @@ app.post('/api/announcements', authenticateToken, isAdmin, [
 // 4. Requests
 app.get('/api/requests', authenticateToken, async (req, res) => {
     try {
-        const rows = await db.all('SELECT * FROM requests ORDER BY id DESC');
+        let rows;
+        if (req.user.role === 'admin' || req.user.role === 'manager') {
+            // Admins and managers see all requests
+            rows = await db.all('SELECT * FROM requests ORDER BY id DESC');
+        } else {
+            // Employees only see their own requests
+            rows = await db.all('SELECT * FROM requests WHERE user_email = ? ORDER BY id DESC', [req.user.email]);
+        }
         res.json(rows);
     } catch (err) {
         logAudit(req.user?.email || 'public', 'REQUEST_VIEW_FAILURE', `Error viewing requests: ${err.message}`);
@@ -643,13 +650,15 @@ app.post('/api/requests', authenticateToken, [
     validate
 ], async (req, res) => {
     const { title, type, status, date } = req.body;
+    const user_email = req.user.email; // IDOR Protection: always use authenticated user
+    const user_name = req.user.name;
     try {
         const result = await db.run(
-            'INSERT INTO requests (title, type, status, date) VALUES (?, ?, ?, ?)',
-            [title, type, status, date]
+            'INSERT INTO requests (title, type, status, date, user_email, user_name) VALUES (?, ?, ?, ?, ?, ?)',
+            [title, type, status, date, user_email, user_name]
         );
         logAudit(req.user.email, 'REQUEST_CREATE', `Created request: ${title}`);
-        res.json({ id: result.lastID, title, type, status, date });
+        res.json({ id: result.lastID, title, type, status, date, user_email, user_name });
     } catch (err) {
         logAudit(req.user.email, 'REQUEST_CREATE_FAILURE', `Error creating request: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
@@ -976,7 +985,7 @@ app.put('/api/performance/manager', authenticateToken, isManager, [
     }
 });
 
-// 10. Documents
+// 10. Documents — all authenticated users can upload
 app.post('/api/documents/upload', authenticateToken, (req, res) => {
     upload.single('file')(req, res, async (uploadErr) => {
         if (uploadErr instanceof multer.MulterError && uploadErr.code === 'LIMIT_FILE_SIZE') {
@@ -994,15 +1003,17 @@ app.post('/api/documents/upload', authenticateToken, (req, res) => {
         }
         const category = typeof req.body.category === 'string' ? req.body.category.trim().slice(0, 60) : 'General';
         const { filename, size, originalname } = req.file;
-        const ext = path.extname(originalname || '').toLowerCase();
         const date = new Date().toLocaleDateString('en-US');
         const uploaded_by = req.user.name || req.user.email;
+        const user_email = req.user.email;
+        // Admin/Manager uploads = company docs (visible to all); Employee = personal doc
+        const is_company_doc = (req.user.role === 'admin' || req.user.role === 'manager') ? 1 : 0;
         try {
             await db.run(
-                'INSERT INTO documents (title, filename, size, date, category, uploaded_by, original_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                [title, filename, size, date, category, uploaded_by, originalname]
+                'INSERT INTO documents (title, filename, size, date, category, uploaded_by, original_name, user_email, is_company_doc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [title, filename, size, date, category, uploaded_by, originalname, user_email, is_company_doc]
             );
-            logAudit(req.user.email, 'DOCUMENT_UPLOAD', `Uploaded document: ${title} (${filename})`);
+            logAudit(req.user.email, 'DOCUMENT_UPLOAD', `Uploaded document: ${title} (${filename}) [company=${is_company_doc}]`);
             res.json({ success: true });
         } catch (err) {
             logAudit(req.user.email, 'DOCUMENT_UPLOAD_FAILURE', `Error uploading document ${filename}: ${err.message}`);
@@ -1033,11 +1044,20 @@ app.get('/api/documents/download/:filename', authenticateToken, (req, res) => {
     }
 });
 
-app.delete('/api/documents/:id', authenticateToken, isAdmin, async (req, res) => {
+// Admins can delete any doc; employees can only delete their own personal docs
+app.delete('/api/documents/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     try {
         const doc = await db.get('SELECT * FROM documents WHERE id = ?', [id]);
         if (!doc) return res.status(404).json({ success: false, message: 'Document not found' });
+
+        // Authorisation: admin deletes anything; owner deletes their own
+        const isOwner = doc.user_email && doc.user_email === req.user.email;
+        if (req.user.role !== 'admin' && !isOwner) {
+            logAudit(req.user.email, 'DOCUMENT_DELETE_FORBIDDEN', `Attempted to delete doc ID ${id} owned by ${doc.user_email}`);
+            return res.status(403).json({ success: false, message: 'Forbidden: You can only delete your own documents' });
+        }
+
         const filepath = path.join(uploadDir, doc.filename);
         if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
         await db.run('DELETE FROM documents WHERE id = ?', [id]);
