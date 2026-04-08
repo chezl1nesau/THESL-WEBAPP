@@ -669,7 +669,14 @@ app.post('/api/requests', authenticateToken, [
 app.get('/api/leave/annual', authenticateToken, async (req, res) => {
     try {
         const rows = await db.all('SELECT * FROM annual_leave ORDER BY id DESC');
-        res.json(rows);
+        // Map from lowercase DB columns to camelCase expected by the UI
+        const mappedRows = rows.map(r => ({
+            ...r,
+            startDate: r.startdate,
+            endDate: r.enddate,
+            submitDate: r.submitdate
+        }));
+        res.json(mappedRows);
     } catch (err) {
         logAudit(req.user?.email || 'public', 'ANNUAL_LEAVE_VIEW_FAILURE', `Error viewing annual leave: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
@@ -690,7 +697,7 @@ app.post('/api/leave/annual', authenticateToken, [
     
     try {
         const result = await db.run(
-            'INSERT INTO annual_leave (user_email, startDate, endDate, duration, reason, status, submitDate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO annual_leave (user_email, startdate, enddate, duration, reason, status, submitdate) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [user_email, startDate, endDate, duration, reason, status || 'Pending', submitDate]
         );
         
@@ -715,7 +722,11 @@ app.post('/api/leave/annual', authenticateToken, [
 app.get('/api/leave/sick', authenticateToken, async (req, res) => {
     try {
         const rows = await db.all('SELECT * FROM sick_leave ORDER BY id DESC');
-        res.json(rows);
+        const mappedRows = rows.map(r => ({
+            ...r,
+            fileName: r.filename
+        }));
+        res.json(mappedRows);
     } catch (err) {
         logAudit(req.user?.email || 'public', 'SICK_LEAVE_VIEW_FAILURE', `Error viewing sick leave: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
@@ -735,7 +746,7 @@ app.post('/api/leave/sick', authenticateToken, [
     
     try {
         const result = await db.run(
-            'INSERT INTO sick_leave (user_email, type, duration, fileName, status, date) VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT INTO sick_leave (user_email, type, duration, filename, status, date) VALUES (?, ?, ?, ?, ?, ?)',
             [user_email, type, duration, fileName, status || 'Pending', date]
         );
         
