@@ -77,12 +77,21 @@ async function queryToSupabase(query, type, params = []) {
                 for (const condition of conditions) {
                     const cleanCondition = condition.replace(/\w+\./g, '').trim();
                     
-                    const eqMatch = cleanCondition.match(/^(\w+)\s*=\s*\?$/i);
-                    if (eqMatch) {
-                        queryBuilder = queryBuilder.eq(eqMatch[1].toLowerCase(), params[paramIndex++]);
+                    // Handle Parameterized Equality: col = ?
+                    const eqParamMatch = cleanCondition.match(/^(\w+)\s*=\s*\?$/i);
+                    if (eqParamMatch) {
+                        queryBuilder = queryBuilder.eq(eqParamMatch[1].toLowerCase(), params[paramIndex++]);
                         continue;
                     }
 
+                    // Handle Literal Equality: col = "value" or col = 'value'
+                    const eqLiteralMatch = cleanCondition.match(/^(\w+)\s*=\s*(['"])(.*?)\2$/i);
+                    if (eqLiteralMatch) {
+                        queryBuilder = queryBuilder.eq(eqLiteralMatch[1].toLowerCase(), eqLiteralMatch[3]);
+                        continue;
+                    }
+
+                    // Handle IN Clause: col IN (?, ?)
                     const inMatch = cleanCondition.match(/^(\w+)\s+IN\s*\(([^)]+)\)$/i);
                     if (inMatch) {
                         const colName = inMatch[1].toLowerCase();
