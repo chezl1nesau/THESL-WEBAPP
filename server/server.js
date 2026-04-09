@@ -89,9 +89,9 @@ if (fs.existsSync(distPath)) {
 
 app.get('/api/health', (req, res) => res.json({ 
     status: 'ok', 
-    version: '1.0.3-manager-sync', 
+    version: '1.0.4-calendar-fix', 
     time: new Date(),
-    details: 'Manager Approval Sync & Case-Insensitive Adapter Active'
+    details: 'Manager Approval Sync & Calendar Filtering Logic Active'
 }));
 
 const uploadDir = path.join(process.cwd(), 'server', 'uploads');
