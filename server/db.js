@@ -33,11 +33,14 @@ export async function setupDb() {
 async function queryToSupabase(query, type, params = []) {
     try {
         const normalizedQuery = query.trim().replace(/\s+/g, ' ');
+        // console.log(`[DB] Executing: ${normalizedQuery} with params: ${JSON.stringify(params)}`);
 
         // INSERT query
         if (normalizedQuery.toUpperCase().startsWith('INSERT INTO')) {
             const tableMatch = normalizedQuery.match(/INSERT INTO\s+(\w+)/i);
-            const columnsMatch = normalizedQuery.match(/\((.*?)\)\s*VALUES/i);
+            // Non-greedy capture for columns between first set of parentheses
+            const columnsMatch = normalizedQuery.match(/\(([^)]+)\)\s*VALUES/i);
+            
             if (!tableMatch || !columnsMatch) throw new Error('Could not parse INSERT query');
             
             const table = tableMatch[1];
@@ -46,15 +49,19 @@ async function queryToSupabase(query, type, params = []) {
             columns.forEach((col, i) => {
                 values[col] = params[i];
             });
+            
             const { data, error } = await supabase.from(table).insert([values]).select();
             if (error) throw error;
             const result = data?.[0] || {};
-            return { ...result, lastID: result.id };
+            // Return BOTH the original result and a normalized lastID
+            const finalResult = { ...result, lastID: result.id };
+            // console.log(`[DB] Insert Success:`, finalResult);
+            return finalResult;
         }
 
         // SELECT query
         if (normalizedQuery.toUpperCase().startsWith('SELECT')) {
-            const fromMatch = normalizedQuery.match(/FROM\s+(\w+)(?:\s+\w+)?/i);
+            const fromMatch = normalizedQuery.match(/FROM\s+(\w+)/i);
             if (!fromMatch) throw new Error('Could not parse table name from SELECT');
             const table = fromMatch[1];
             
@@ -64,14 +71,28 @@ async function queryToSupabase(query, type, params = []) {
             const whereMatch = normalizedQuery.match(/WHERE\s+([\s\S]+?)(?:\s+ORDER BY|\s+LIMIT|$)/i);
             if (whereMatch) {
                 const whereClause = whereMatch[1];
+                // Support multiple AND conditions
                 const conditions = whereClause.split(/\s+AND\s+/i);
-                let paramOffset = 0;
+                let paramIndex = 0;
+                
                 for (const condition of conditions) {
-                    // Strip aliases like p.user_email
-                    const cleanCondition = condition.replace(/\w+\./g, '');
-                    const eqMatch = cleanCondition.match(/(\w+)\s*=\s*\?/i);
+                    const cleanCondition = condition.replace(/\w+\./g, '').trim();
+                    
+                    // Match "col = ?" or "col=?"
+                    const eqMatch = cleanCondition.match(/^(\w+)\s*=\s*\?$/i);
                     if (eqMatch) {
-                        queryBuilder = queryBuilder.eq(eqMatch[1], params[paramOffset++]);
+                        queryBuilder = queryBuilder.eq(eqMatch[1], params[paramIndex++]);
+                        continue;
+                    }
+
+                    // Match "col IN (?, ?)"
+                    const inMatch = cleanCondition.match(/^(\w+)\s+IN\s*\(([^)]+)\)$/i);
+                    if (inMatch) {
+                        const colName = inMatch[1];
+                        const placeholders = inMatch[2].split(',').map(p => p.trim());
+                        const inValues = placeholders.map(() => params[paramIndex++]);
+                        queryBuilder = queryBuilder.in(colName, inValues);
+                        continue;
                     }
                 }
             }
@@ -79,9 +100,7 @@ async function queryToSupabase(query, type, params = []) {
             // Handle ORDER BY
             const orderMatch = normalizedQuery.match(/ORDER BY\s+([\w.]+)(?:\s+(ASC|DESC))?/i);
             if (orderMatch) {
-                // Strip alias like p.id -> id
                 const field = orderMatch[1].includes('.') ? orderMatch[1].split('.')[1] : orderMatch[1];
-                console.log('ORDER BY Field:', field, 'Original:', orderMatch[1]);
                 queryBuilder = queryBuilder.order(field, { ascending: orderMatch[2]?.toUpperCase() !== 'DESC' });
             }
 
@@ -95,19 +114,19 @@ async function queryToSupabase(query, type, params = []) {
             const { data, error } = await queryBuilder;
             if (error) throw error;
             
-            // Post-process JOIN results to match standard SQLite rows { user_name: ... }
             const rows = (data || []).map(row => {
                 const newRow = { ...row };
-                if (row.users) {
-                    newRow.user_name = Array.isArray(row.users) ? row.users[0]?.name : row.users.name;
-                    delete newRow.users;
-                }
+                // Expose keys in both original and lowercase for better compatibility
+                Object.keys(row).forEach(key => {
+                    const lowKey = key.toLowerCase();
+                    if (key !== lowKey && newRow[lowKey] === undefined) {
+                        newRow[lowKey] = row[key];
+                    }
+                });
                 return newRow;
             });
 
-            if (type === 'single') {
-                return rows?.[0] || null;
-            }
+            if (type === 'single') return rows?.[0] || null;
             return rows;
         }
 
@@ -176,7 +195,7 @@ async function queryToSupabase(query, type, params = []) {
         return type === 'single' ? null : [];
     } catch (err) {
         console.error('Supabase Query Error:', err.message || err);
-        throw err; // Re-throw to be caught by server.js error handlers
+        throw err;
     }
 }
 

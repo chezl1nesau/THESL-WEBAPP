@@ -672,9 +672,9 @@ app.get('/api/leave/annual', authenticateToken, async (req, res) => {
         // Map from lowercase DB columns to camelCase expected by the UI
         const mappedRows = rows.map(r => ({
             ...r,
-            startDate: r.startdate,
-            endDate: r.enddate,
-            submitDate: r.submitdate
+            startDate: r.startdate || r.startDate,
+            endDate: r.enddate || r.endDate,
+            submitDate: r.submitdate || r.submitDate
         }));
         res.json(mappedRows);
     } catch (err) {
@@ -724,7 +724,7 @@ app.get('/api/leave/sick', authenticateToken, async (req, res) => {
         const rows = await db.all('SELECT * FROM sick_leave ORDER BY id DESC');
         const mappedRows = rows.map(r => ({
             ...r,
-            fileName: r.filename
+            fileName: r.filename || r.fileName
         }));
         res.json(mappedRows);
     } catch (err) {
@@ -1311,16 +1311,16 @@ app.get('/api/calendar', authenticateToken, async (req, res) => {
         });
         annualLeaves.forEach(l => {
             events.push({
-                title: `[Leave] ${l.user_email.split('@')[0]}`,
-                start: new Date(l.startDate),
-                end: new Date(l.endDate),
+                title: `[Leave] ${l.user_email ? l.user_email.split('@')[0] : 'Unknown'}`,
+                start: new Date(l.startDate || l.startdate),
+                end: new Date(l.endDate || l.enddate),
                 allDay: true,
                 type: 'leave'
             });
         });
         sickLeaves.forEach(s => {
             events.push({
-                title: `[Sick] ${s.user_email.split('@')[0]}`,
+                title: `[Sick] ${s.user_email ? s.user_email.split('@')[0] : 'Unknown'}`,
                 start: new Date(s.date),
                 end: new Date(s.date),
                 allDay: true,
