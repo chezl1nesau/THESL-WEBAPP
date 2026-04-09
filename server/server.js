@@ -87,7 +87,12 @@ if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
 }
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
+app.get('/api/health', (req, res) => res.json({ 
+    status: 'ok', 
+    version: '1.0.3-manager-sync', 
+    time: new Date(),
+    details: 'Manager Approval Sync & Case-Insensitive Adapter Active'
+}));
 
 const uploadDir = path.join(process.cwd(), 'server', 'uploads');
 if (!fs.existsSync(uploadDir)) {
