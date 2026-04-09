@@ -33,37 +33,37 @@ export async function setupDb() {
 async function queryToSupabase(query, type, params = []) {
     try {
         const normalizedQuery = query.trim().replace(/\s+/g, ' ');
-        // console.log(`[DB] Executing: ${normalizedQuery} with params: ${JSON.stringify(params)}`);
+        // console.log(`[DB DEBUG] Executing: ${normalizedQuery}`);
 
         // INSERT query
         if (normalizedQuery.toUpperCase().startsWith('INSERT INTO')) {
             const tableMatch = normalizedQuery.match(/INSERT INTO\s+(\w+)/i);
-            // Non-greedy capture for columns between first set of parentheses
             const columnsMatch = normalizedQuery.match(/\(([^)]+)\)\s*VALUES/i);
             
-            if (!tableMatch || !columnsMatch) throw new Error('Could not parse INSERT query');
+            if (!tableMatch || !columnsMatch) throw new Error('Could parse INSERT query');
             
-            const table = tableMatch[1];
-            const columns = columnsMatch[1].split(',').map(c => c.trim());
+            // Force table and columns to lowercase for Supabase
+            const table = tableMatch[1].toLowerCase();
+            const columns = columnsMatch[1].split(',').map(c => c.trim().toLowerCase());
             const values = {};
             columns.forEach((col, i) => {
                 values[col] = params[i];
             });
             
             const { data, error } = await supabase.from(table).insert([values]).select();
-            if (error) throw error;
+            if (error) {
+                console.error(`[DB ERROR] Insert to ${table} failed:`, error.message);
+                throw error;
+            }
             const result = data?.[0] || {};
-            // Return BOTH the original result and a normalized lastID
-            const finalResult = { ...result, lastID: result.id };
-            // console.log(`[DB] Insert Success:`, finalResult);
-            return finalResult;
+            return { ...result, lastID: result.id };
         }
 
         // SELECT query
         if (normalizedQuery.toUpperCase().startsWith('SELECT')) {
             const fromMatch = normalizedQuery.match(/FROM\s+(\w+)/i);
             if (!fromMatch) throw new Error('Could not parse table name from SELECT');
-            const table = fromMatch[1];
+            const table = fromMatch[1].toLowerCase();
             
             let queryBuilder = supabase.from(table).select('*');
 
@@ -71,24 +71,21 @@ async function queryToSupabase(query, type, params = []) {
             const whereMatch = normalizedQuery.match(/WHERE\s+([\s\S]+?)(?:\s+ORDER BY|\s+LIMIT|$)/i);
             if (whereMatch) {
                 const whereClause = whereMatch[1];
-                // Support multiple AND conditions
                 const conditions = whereClause.split(/\s+AND\s+/i);
                 let paramIndex = 0;
                 
                 for (const condition of conditions) {
                     const cleanCondition = condition.replace(/\w+\./g, '').trim();
                     
-                    // Match "col = ?" or "col=?"
                     const eqMatch = cleanCondition.match(/^(\w+)\s*=\s*\?$/i);
                     if (eqMatch) {
-                        queryBuilder = queryBuilder.eq(eqMatch[1], params[paramIndex++]);
+                        queryBuilder = queryBuilder.eq(eqMatch[1].toLowerCase(), params[paramIndex++]);
                         continue;
                     }
 
-                    // Match "col IN (?, ?)"
                     const inMatch = cleanCondition.match(/^(\w+)\s+IN\s*\(([^)]+)\)$/i);
                     if (inMatch) {
-                        const colName = inMatch[1];
+                        const colName = inMatch[1].toLowerCase();
                         const placeholders = inMatch[2].split(',').map(p => p.trim());
                         const inValues = placeholders.map(() => params[paramIndex++]);
                         queryBuilder = queryBuilder.in(colName, inValues);
@@ -100,7 +97,7 @@ async function queryToSupabase(query, type, params = []) {
             // Handle ORDER BY
             const orderMatch = normalizedQuery.match(/ORDER BY\s+([\w.]+)(?:\s+(ASC|DESC))?/i);
             if (orderMatch) {
-                const field = orderMatch[1].includes('.') ? orderMatch[1].split('.')[1] : orderMatch[1];
+                const field = (orderMatch[1].includes('.') ? orderMatch[1].split('.')[1] : orderMatch[1]).toLowerCase();
                 queryBuilder = queryBuilder.order(field, { ascending: orderMatch[2]?.toUpperCase() !== 'DESC' });
             }
 
@@ -112,11 +109,13 @@ async function queryToSupabase(query, type, params = []) {
             }
 
             const { data, error } = await queryBuilder;
-            if (error) throw error;
+            if (error) {
+                console.error(`[DB ERROR] Select from ${table} failed:`, error.message);
+                throw error;
+            }
             
             const rows = (data || []).map(row => {
                 const newRow = { ...row };
-                // Expose keys in both original and lowercase for better compatibility
                 Object.keys(row).forEach(key => {
                     const lowKey = key.toLowerCase();
                     if (key !== lowKey && newRow[lowKey] === undefined) {
@@ -137,7 +136,7 @@ async function queryToSupabase(query, type, params = []) {
             const whereMatch = normalizedQuery.match(/WHERE\s+([\s\S]+?)$/i);
             
             if (tableMatch && setMatch && whereMatch) {
-                const table = tableMatch[1];
+                const table = tableMatch[1].toLowerCase();
                 const setClause = setMatch[1];
                 const whereClause = whereMatch[1];
                 
@@ -148,7 +147,7 @@ async function queryToSupabase(query, type, params = []) {
                 setParts.forEach(part => {
                     const match = part.match(/(\w+)\s*=\s*\?/);
                     if (match) {
-                        updates[match[1]] = params[paramIndex++];
+                        updates[match[1].toLowerCase()] = params[paramIndex++];
                     }
                 });
                 
@@ -157,12 +156,15 @@ async function queryToSupabase(query, type, params = []) {
                 whereParts.forEach(cond => {
                     const match = cond.match(/(\w+)\s*=\s*\?/);
                     if (match) {
-                        queryBuilder = queryBuilder.eq(match[1], params[paramIndex++]);
+                        queryBuilder = queryBuilder.eq(match[1].toLowerCase(), params[paramIndex++]);
                     }
                 });
                 
                 const { data, error } = await queryBuilder.select();
-                if (error) throw error;
+                if (error) {
+                    console.error(`[DB ERROR] Update ${table} failed:`, error.message);
+                    throw error;
+                }
                 return data?.[0] || null;
             }
         }
@@ -173,7 +175,7 @@ async function queryToSupabase(query, type, params = []) {
             const whereMatch = normalizedQuery.match(/WHERE\s+([\s\S]+?)$/i);
             
             if (tableMatch && whereMatch) {
-                const table = tableMatch[1];
+                const table = tableMatch[1].toLowerCase();
                 const whereClause = whereMatch[1];
                 
                 let queryBuilder = supabase.from(table).delete();
@@ -182,11 +184,14 @@ async function queryToSupabase(query, type, params = []) {
                 whereParts.forEach(cond => {
                     const match = cond.match(/(\w+)\s*=\s*\?/);
                     if (match) {
-                        queryBuilder = queryBuilder.eq(match[1], params[paramIndex++]);
+                        queryBuilder = queryBuilder.eq(match[1].toLowerCase(), params[paramIndex++]);
                     }
                 });
                 const { data, error } = await queryBuilder.select();
-                if (error) throw error;
+                if (error) {
+                    console.error(`[DB ERROR] Delete from ${table} failed:`, error.message);
+                    throw error;
+                }
                 return data;
             }
         }

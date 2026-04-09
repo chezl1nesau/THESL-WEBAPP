@@ -165,6 +165,15 @@ const isAdmin = (req, res, next) => {
     }
 };
 
+// Special Managers who can see everything
+const SPECIAL_AUTHORIZED_EMAILS = [
+    'afnaan@thesl.co.za',
+    'chezlin@thesl.co.za',
+    'zaid@thesl.co.za'
+];
+
+const isSuperAuthorized = (email) => SPECIAL_AUTHORIZED_EMAILS.includes(email ? email.toLowerCase() : '');
+
 const logAudit = (email, action, details) => {
     if (!db) return;
     db.run('INSERT INTO audit_logs (email, action, details) VALUES (?, ?, ?)', [email, action, details], (err) => {
@@ -696,25 +705,38 @@ app.post('/api/leave/annual', authenticateToken, [
     const name = req.user.name;       // Use authenticated name
     
     try {
+        console.log(`[LEAVE DEBUG] Submitting Annual Leave for ${user_email}`);
+        
+        // Fetch manager email for this user
+        const userRec = await db.get('SELECT manager_email FROM users WHERE email = ?', [user_email]);
+        const manager_email = userRec?.manager_email || null;
+
         const result = await db.run(
             'INSERT INTO annual_leave (user_email, startdate, enddate, duration, reason, status, submitdate) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [user_email, startDate, endDate, duration, reason, status || 'Pending', submitDate]
         );
+        console.log(`[LEAVE DEBUG] annual_leave inserted, result:`, JSON.stringify(result));
         
         await db.run(
-            'INSERT INTO pending_approvals (reference_id, user_email, name, type, duration, details, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [result.lastID, user_email, name, 'Annual', duration, `Annual Leave: ${startDate} to ${endDate}`, submitDate]
+            'INSERT INTO pending_approvals (reference_id, user_email, name, type, duration, details, date, manager_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [result.lastID, user_email, name, 'Annual', duration, `Annual Leave: ${startDate} to ${endDate}`, submitDate, manager_email]
         );
+        console.log(`[LEAVE DEBUG] pending_approvals inserted (Manager: ${manager_email})`);
         
+        // Notify the specific manager and all admins
         const admins = await db.all('SELECT email FROM users WHERE role IN (?, ?)', ['admin', 'manager']);
         for (const admin of admins) {
-            await createNotification(admin.email, 'New Leave Request! 📅', `${req.user.name} submitted an Annual Leave request.`, 'info', result.lastID);
+            // Only notify if they are a super-authorized user OR the direct manager
+            if (isSuperAuthorized(admin.email) || admin.email === manager_email) {
+                await createNotification(admin.email, 'New Leave Request! 📅', `${req.user.name} submitted an Annual Leave request.`, 'info', result.lastID);
+            }
         }
         logAudit(req.user.email, 'ANNUAL_LEAVE_REQUEST', `Requested annual leave from ${startDate} to ${endDate}`);
         res.json({ id: result.lastID, user_email, startDate, endDate, duration, reason, status, submitDate });
     } catch (err) {
+        console.error(`[LEAVE ERROR] Failed:`, err.message);
         logAudit(req.user.email, 'ANNUAL_LEAVE_REQUEST_FAILURE', `Error requesting annual leave: ${err.message}`);
-        res.status(500).json({ success: false, message: 'Database error' });
+        res.status(500).json({ success: false, message: 'Database error: ' + err.message });
     }
 });
 
@@ -745,19 +767,25 @@ app.post('/api/leave/sick', authenticateToken, [
     const name = req.user.name;
     
     try {
+        // Fetch manager email
+        const userRec = await db.get('SELECT manager_email FROM users WHERE email = ?', [user_email]);
+        const manager_email = userRec?.manager_email || null;
+
         const result = await db.run(
             'INSERT INTO sick_leave (user_email, type, duration, filename, status, date) VALUES (?, ?, ?, ?, ?, ?)',
             [user_email, type, duration, fileName, status || 'Pending', date]
         );
         
         await db.run(
-            'INSERT INTO pending_approvals (reference_id, user_email, name, type, duration, details, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [result.lastID, user_email, name, 'Sick', duration, `Sick Leave: ${type} on ${date}`, date]
+            'INSERT INTO pending_approvals (reference_id, user_email, name, type, duration, details, date, manager_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [result.lastID, user_email, name, 'Sick', duration, `Sick Leave: ${type} on ${date}`, date, manager_email]
         );
         
         const admins = await db.all('SELECT email FROM users WHERE role IN (?, ?)', ['admin', 'manager']);
         for (const admin of admins) {
-            await createNotification(admin.email, 'New Sick Leave! 🤒', `${req.user.name} recorded a Sick Leave instance.`, 'error', result.lastID);
+            if (isSuperAuthorized(admin.email) || admin.email === manager_email) {
+                await createNotification(admin.email, 'New Sick Leave! 🤒', `${req.user.name} recorded a Sick Leave instance.`, 'error', result.lastID);
+            }
         }
         logAudit(req.user.email, 'SICK_LEAVE_REQUEST', `Requested sick leave for ${duration} days on ${date}`);
         res.json({ id: result.lastID, user_email, type, duration, fileName, status, date });
@@ -812,7 +840,14 @@ app.get('/api/admin/audit-logs', authenticateToken, isAdmin, async (req, res) =>
 
 app.get('/api/admin/pending', authenticateToken, isManager, async (req, res) => {
     try {
-        const rows = await db.all('SELECT * FROM pending_approvals');
+        let rows;
+        // Super-authorized users (Afnaan, Chezlin, Zaid) and admins see everything
+        if (req.user.role === 'admin' || isSuperAuthorized(req.user.email)) {
+            rows = await db.all('SELECT * FROM pending_approvals');
+        } else {
+            // Managers see only their employees' requests
+            rows = await db.all('SELECT * FROM pending_approvals WHERE manager_email = ?', [req.user.email]);
+        }
         res.json(rows);
     } catch (err) {
         logAudit(req.user.email, 'PENDING_APPROVALS_VIEW_FAILURE', `Error viewing pending approvals: ${err.message}`);
@@ -831,6 +866,11 @@ app.post('/api/admin/action', authenticateToken, isManager, [
         const pending = await db.get('SELECT * FROM pending_approvals WHERE id = ?', [id]);
         if (!pending) {
             return res.status(404).json({ success: false, message: 'Pending approval not found' });
+        }
+
+        // Authorization check for non-super managers
+        if (req.user.role !== 'admin' && !isSuperAuthorized(req.user.email) && pending.manager_email !== req.user.email) {
+            return res.status(403).json({ success: false, message: 'You are not authorized to approve this request' });
         }
 
         if (action === 'Approve') {
