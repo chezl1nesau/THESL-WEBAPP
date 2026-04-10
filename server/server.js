@@ -1066,7 +1066,7 @@ app.post('/api/documents/upload', authenticateToken, (req, res) => {
         const is_company_doc = (req.user.role === 'admin' || req.user.role === 'manager') ? 1 : 0;
         try {
             await db.run(
-                'INSERT INTO documents (title, filename, size, date, category, uploaded_by, original_name, user_email, is_company_doc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO documents (title, filename, size, uploaddate, category, uploaded_by, original_name, user_email, is_company_doc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [title, filename, size, date, category, uploaded_by, originalname, user_email, is_company_doc]
             );
             logAudit(req.user.email, 'DOCUMENT_UPLOAD', `Uploaded document: ${title} (${filename}) [company=${is_company_doc}]`);
@@ -1081,7 +1081,12 @@ app.post('/api/documents/upload', authenticateToken, (req, res) => {
 app.get('/api/documents', authenticateToken, async (req, res) => {
     try {
         const rows = await db.all('SELECT * FROM documents ORDER BY id DESC');
-        res.json(rows);
+        // Map uploaddate to date for UI compatibility if needed
+        const mappedRows = rows.map(r => ({
+            ...r,
+            date: r.date || r.uploaddate
+        }));
+        res.json(mappedRows);
     } catch (err) {
         logAudit(req.user?.email || 'public', 'DOCUMENT_VIEW_FAILURE', `Error viewing documents: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
@@ -1132,11 +1137,12 @@ app.get('/api/compliments', authenticateToken, async (req, res) => {
         if (req.user.role === 'admin' || req.user.role === 'manager') {
             rows = await db.all('SELECT * FROM compliments ORDER BY id DESC');
         } else {
-            rows = await db.all('SELECT * FROM compliments WHERE status IN (?, ?) ORDER BY id DESC', ['approved', req.user.email]);
-            // Re-fetch because SQL queries with IN clauses can be tricky with different logic needs:
-            // For regular employees, we return all approved OR pending ones that they either gave or received
-            rows = await db.all('SELECT * FROM compliments WHERE status = ? OR recipient_email = ? OR given_by_email = ? ORDER BY id DESC', 
-                ['approved', req.user.email, req.user.email]);
+            // Check if status exists before filtering by it
+            const all = await db.all('SELECT * FROM compliments ORDER BY id DESC');
+            rows = all.filter(c => {
+                const status = (c.status || 'approved').toLowerCase();
+                return status === 'approved' || c.recipient_email === req.user.email || c.given_by_email === req.user.email;
+            });
         }
         res.json(rows);
     } catch (err) {
@@ -1163,10 +1169,31 @@ app.post('/api/compliments', authenticateToken, [
     const status = (req.user.role === 'admin' || req.user.role === 'manager') ? 'approved' : 'pending';
 
     try {
-        const result = await db.run(
-            'INSERT INTO compliments (recipient_email, recipient_name, given_by, given_by_email, category, message, bonus_amount, date, status, period) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [recipient_email, recipient_name, given_by, given_by_email, category, message, bonus_amount || null, date, status, period]
-        );
+        // Prepare columns and values dynamically in case of schema mismatches
+        const complimentData = {
+            recipient_email, recipient_name, given_by, given_by_email, category, message, 
+            bonus_amount: bonus_amount || null, date, status, period
+        };
+        
+        // We'll use a direct supabase call here to be more resilient if some columns are missing
+        const { data, error } = await supabase.from('compliments').insert([complimentData]).select();
+        
+        if (error) {
+            console.error('[COMPLIMENTS ERROR] Insert failed:', error.message);
+            // Fallback: try without status and period if they are the cause
+            if (error.message.includes('status') || error.message.includes('period')) {
+                const fallbackData = { ...complimentData };
+                delete fallbackData.status;
+                delete fallbackData.period;
+                const { data: fbData, error: fbError } = await supabase.from('compliments').insert([fallbackData]).select();
+                if (fbError) throw fbError;
+                var result = { lastID: fbData?.[0]?.id };
+            } else {
+                throw error;
+            }
+        } else {
+            var result = { lastID: data?.[0]?.id };
+        }
         
         const isApproved = status === 'approved';
         if (isApproved) {

@@ -75,27 +75,30 @@ async function queryToSupabase(query, type, params = []) {
                 let paramIndex = 0;
                 
                 for (const condition of conditions) {
-                    const cleanCondition = condition.replace(/\w+\./g, '').trim();
+                    const cleanCondition = condition.trim();
                     
-                    // Handle Parameterized Equality: col = ?
-                    const eqParamMatch = cleanCondition.match(/^(\w+)\s*=\s*\?$/i);
+                    // Handle Parameterized Equality: [table.]col = ?
+                    const eqParamMatch = cleanCondition.match(/^(?:(\w+)\.)?(\w+)\s*=\s*\?$/i);
                     if (eqParamMatch) {
-                        queryBuilder = queryBuilder.eq(eqParamMatch[1].toLowerCase(), params[paramIndex++]);
+                        const colName = eqParamMatch[2].toLowerCase();
+                        queryBuilder = queryBuilder.eq(colName, params[paramIndex++]);
                         continue;
                     }
 
-                    // Handle Literal Equality: col = "value" or col = 'value'
-                    const eqLiteralMatch = cleanCondition.match(/^(\w+)\s*=\s*(['"])(.*?)\2$/i);
+                    // Handle Literal Equality: [table.]col = "value" or 'value'
+                    const eqLiteralMatch = cleanCondition.match(/^(?:(\w+)\.)?(\w+)\s*=\s*(['"])(.*?)\3$/i);
                     if (eqLiteralMatch) {
-                        queryBuilder = queryBuilder.eq(eqLiteralMatch[1].toLowerCase(), eqLiteralMatch[3]);
+                        const colName = eqLiteralMatch[2].toLowerCase();
+                        const value = eqLiteralMatch[4];
+                        queryBuilder = queryBuilder.eq(colName, value);
                         continue;
                     }
 
-                    // Handle IN Clause: col IN (?, ?)
-                    const inMatch = cleanCondition.match(/^(\w+)\s+IN\s*\(([^)]+)\)$/i);
+                    // Handle IN Clause: [table.]col IN (?, ?)
+                    const inMatch = cleanCondition.match(/^(?:(\w+)\.)?(\w+)\s+IN\s*\(([^)]+)\)$/i);
                     if (inMatch) {
-                        const colName = inMatch[1].toLowerCase();
-                        const placeholders = inMatch[2].split(',').map(p => p.trim());
+                        const colName = inMatch[2].toLowerCase();
+                        const placeholders = inMatch[3].split(',').map(p => p.trim());
                         const inValues = placeholders.map(() => params[paramIndex++]);
                         queryBuilder = queryBuilder.in(colName, inValues);
                         continue;
@@ -163,9 +166,16 @@ async function queryToSupabase(query, type, params = []) {
                 let queryBuilder = supabase.from(table).update(updates);
                 const whereParts = whereClause.split(/\s+AND\s+/i);
                 whereParts.forEach(cond => {
-                    const match = cond.match(/(\w+)\s*=\s*\?/);
-                    if (match) {
-                        queryBuilder = queryBuilder.eq(match[1].toLowerCase(), params[paramIndex++]);
+                    const cleanCond = cond.trim();
+                    // Parameterized: [table.]col = ?
+                    const paramMatch = cleanCond.match(/^(?:(\w+)\.)?(\w+)\s*=\s*\?$/);
+                    if (paramMatch) {
+                        queryBuilder = queryBuilder.eq(paramMatch[2].toLowerCase(), params[paramIndex++]);
+                    }
+                    // Literal: [table.]col = "val"
+                    const literalMatch = cleanCond.match(/^(?:(\w+)\.)?(\w+)\s*=\s*(['"])(.*?)\3$/);
+                    if (literalMatch) {
+                        queryBuilder = queryBuilder.eq(literalMatch[2].toLowerCase(), literalMatch[4]);
                     }
                 });
                 
@@ -191,9 +201,16 @@ async function queryToSupabase(query, type, params = []) {
                 const whereParts = whereClause.split(/\s+AND\s+/i);
                 let paramIndex = 0;
                 whereParts.forEach(cond => {
-                    const match = cond.match(/(\w+)\s*=\s*\?/);
-                    if (match) {
-                        queryBuilder = queryBuilder.eq(match[1].toLowerCase(), params[paramIndex++]);
+                    const cleanCond = cond.trim();
+                    // Parameterized: [table.]col = ?
+                    const paramMatch = cleanCond.match(/^(?:(\w+)\.)?(\w+)\s*=\s*\?$/);
+                    if (paramMatch) {
+                        queryBuilder = queryBuilder.eq(paramMatch[2].toLowerCase(), params[paramIndex++]);
+                    }
+                    // Literal: [table.]col = "val"
+                    const literalMatch = cleanCond.match(/^(?:(\w+)\.)?(\w+)\s*=\s*(['"])(.*?)\3$/);
+                    if (literalMatch) {
+                        queryBuilder = queryBuilder.eq(literalMatch[2].toLowerCase(), literalMatch[4]);
                     }
                 });
                 const { data, error } = await queryBuilder.select();
