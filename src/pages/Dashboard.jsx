@@ -263,7 +263,7 @@ function EmployeeDashboard({ user, token }) {
                                         </div>
                                         <div>
                                             <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{req.title || req.type}</div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>{req.date}</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>{req.details || req.date}</div>
                                         </div>
                                     </div>
                                     <span className={`badge badge-${req.status?.toLowerCase() === 'pending' ? 'warning' : req.status?.toLowerCase() === 'resolved' || req.status === 'success' || req.status === 'Approved' ? 'success' : 'danger'}`}>
@@ -440,9 +440,9 @@ export function ManagementDashboard({ token }) {
                                         </div>
                                         <div>
                                             <h4 style={{ margin: 0, fontSize: '0.95rem' }}>{item.name}</h4>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-light)', marginTop: '0.2rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                                <span className="badge badge-primary" style={{ padding: '0.15rem 0.4rem', fontSize: '0.65rem' }}>{item.type}</span>
-                                                {item.date}
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-light)', marginTop: '0.2rem', display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
+                                                <span className="badge badge-primary" style={{ padding: '0.15rem 0.5rem', fontSize: '0.65rem' }}>{item.type}</span>
+                                                <span style={{color: 'var(--accent)', fontWeight: 600}}>{item.details || item.date}</span>
                                             </div>
                                         </div>
                                     </div>

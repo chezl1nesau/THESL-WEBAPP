@@ -1080,15 +1080,26 @@ app.post('/api/documents/upload', authenticateToken, (req, res) => {
 
 app.get('/api/documents', authenticateToken, async (req, res) => {
     try {
-        const rows = await db.all('SELECT * FROM documents ORDER BY id DESC');
-        // Map uploaddate to date for UI compatibility if needed
+        let rows;
+        if (req.user.role === 'admin' || req.user.role === 'manager') {
+            rows = await db.all('SELECT * FROM documents ORDER BY id DESC');
+        } else {
+            // Filter: Company docs OR user's own docs
+            // Also include docs where the title contains their name (case-insensitive) as a fallback for existing KPIs
+            const namePart = req.user.name.split(' ')[0].toLowerCase();
+            rows = await db.all(
+                'SELECT * FROM documents WHERE is_company_doc = 1 OR user_email = ? OR LOWER(title) LIKE ? ORDER BY id DESC',
+                [req.user.email, `%${namePart}%`]
+            );
+        }
+        
         const mappedRows = rows.map(r => ({
             ...r,
             date: r.date || r.uploaddate
         }));
         res.json(mappedRows);
     } catch (err) {
-        logAudit(req.user?.email || 'public', 'DOCUMENT_VIEW_FAILURE', `Error viewing documents: ${err.message}`);
+        logAudit(req.user?.email || 'unknown', 'DOCUMENT_VIEW_FAILURE', `Error viewing documents: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
     }
 });
