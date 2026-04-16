@@ -11,7 +11,7 @@ export default function EmployeeDirectory({ token }) {
 
     useEffect(() => {
         setLoading(true);
-        api.get('/api/admin/users', token)
+        api.get('/api/directory', token)
             .then(res => res.json())
             .then(data => {
                 if (Array.isArray(data)) setEmployees(data);

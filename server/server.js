@@ -585,18 +585,33 @@ app.get('/api/user/profile', authenticateToken, async (req, res) => {
 // 2. Balances
 app.get('/api/user/balances', authenticateToken, async (req, res) => {
     const email = req.query.email;
-    // IDOR Protection: Users can only view their own balances unless admin
-    if (req.user.role !== 'admin' && email !== req.user.email) {
-        logAudit(req.user.email, 'BALANCE_VIEW_ATTEMPT', `Forbidden attempt to view balances for ${email}`);
-        return res.status(403).json({ success: false, message: 'Forbidden: Cannot view another user\'s balances' });
-    }
-    const targetEmail = req.user.role === 'admin' ? email : req.user.email;
-
+    const isOwner = email === req.user.email;
+    
     try {
-        const user = await db.get('SELECT annual_balance, sick_balance, annual_used, sick_used FROM users WHERE email = ?', [targetEmail]);
-        res.json(user || { annual_balance: 0, sick_balance: 0, annual_used: 0, sick_used: 0 });
+        let rows;
+        if (req.user.role === 'admin') {
+            rows = await db.get('SELECT annual_balance, sick_balance, annual_used, sick_used FROM users WHERE email = ?', [email || req.user.email]);
+        } else if (req.user.role === 'manager') {
+            // Managers see their own OR their direct reports' balances
+            rows = await db.get(`
+                SELECT annual_balance, sick_balance, annual_used, sick_used, manager_email FROM users WHERE email = ?
+            `, [email || req.user.email]);
+            
+            if (rows && rows.manager_email !== req.user.email && !isOwner) {
+                logAudit(req.user.email, 'BALANCE_VIEW_ATTEMPT', `Forbidden attempt by manager to view balances for ${email}`);
+                return res.status(403).json({ success: false, message: 'Forbidden: You can only view your team\'s balances' });
+            }
+        } else {
+            // Standard users only see their own
+            if (!isOwner) {
+                 logAudit(req.user.email, 'BALANCE_VIEW_ATTEMPT', `Forbidden attempt by employee to view balances for ${email}`);
+                 return res.status(403).json({ success: false, message: 'Forbidden: You can only view your own balances' });
+            }
+            rows = await db.get('SELECT annual_balance, sick_balance, annual_used, sick_used FROM users WHERE email = ?', [req.user.email]);
+        }
+        res.json(rows || { annual_balance: 0, sick_balance: 0, annual_used: 0, sick_used: 0 });
     } catch (err) {
-        logAudit(req.user.email, 'BALANCE_VIEW_FAILURE', `Error viewing balances for ${targetEmail}: ${err.message}`);
+        logAudit(req.user.email, 'BALANCE_VIEW_FAILURE', `Error viewing balances: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
     }
 });
@@ -643,16 +658,25 @@ app.post('/api/announcements', authenticateToken, isAdmin, [
 app.get('/api/requests', authenticateToken, async (req, res) => {
     try {
         let rows;
-        if (req.user.role === 'admin' || req.user.role === 'manager') {
-            // Admins and managers see all requests
+        if (req.user.role === 'admin') {
+            // Admins see all requests
             rows = await db.all('SELECT * FROM requests ORDER BY id DESC');
+        } else if (req.user.role === 'manager') {
+            // Managers see their own requests AND their direct reports' requests
+            // Join with users table to filter by manager_email
+            rows = await db.all(`
+                SELECT r.* FROM requests r
+                JOIN users u ON r.user_email = u.email
+                WHERE u.manager_email = ? OR r.user_email = ?
+                ORDER BY r.id DESC
+            `, [req.user.email, req.user.email]);
         } else {
             // Employees only see their own requests
             rows = await db.all('SELECT * FROM requests WHERE user_email = ? ORDER BY id DESC', [req.user.email]);
         }
         res.json(rows);
     } catch (err) {
-        logAudit(req.user?.email || 'public', 'REQUEST_VIEW_FAILURE', `Error viewing requests: ${err.message}`);
+        logAudit(req.user?.email || 'unknown', 'REQUEST_VIEW_FAILURE', `Error viewing requests: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
     }
 });
@@ -803,10 +827,25 @@ app.post('/api/leave/sick', authenticateToken, [
 // 7. Lateness Tracker
 app.get('/api/lateness', authenticateToken, async (req, res) => {
     try {
-        const rows = await db.all('SELECT * FROM lateness ORDER BY id DESC');
+        let rows;
+        if (req.user.role === 'admin') {
+            rows = await db.all('SELECT * FROM lateness ORDER BY id DESC');
+        } else if (req.user.role === 'manager') {
+            // Managers see their own lateness AND their team's lateness
+            // Join with users table to filter by manager_email
+            rows = await db.all(`
+                SELECT l.* FROM lateness l
+                JOIN users u ON l.user_email = u.email
+                WHERE u.manager_email = ? OR l.user_email = ?
+                ORDER BY l.id DESC
+            `, [req.user.email, req.user.email]);
+        } else {
+            // Standard employees only see their own lateness
+            rows = await db.all('SELECT * FROM lateness WHERE user_email = ? ORDER BY id DESC', [req.user.email]);
+        }
         res.json(rows);
     } catch (err) {
-        logAudit(req.user?.email || 'public', 'LATENESS_VIEW_FAILURE', `Error viewing lateness records: ${err.message}`);
+        logAudit(req.user?.email || 'unknown', 'LATENESS_VIEW_FAILURE', `Error viewing lateness records: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
     }
 });
@@ -917,9 +956,15 @@ app.post('/api/admin/action', authenticateToken, isManager, [
 
 // 9. Performance Reviews
 app.get('/api/users', authenticateToken, isManager, async (req, res) => {
-    // For admin dropdowns
+    // For manager/admin dropdowns (e.g. Performance Reviews)
     try {
-        const rows = await db.all('SELECT email, name FROM users WHERE role = ?', ['employee']);
+        let rows;
+        if (req.user.role === 'admin') {
+            rows = await db.all('SELECT email, name, role FROM users');
+        } else {
+            // Managers only see their direct reports
+            rows = await db.all('SELECT email, name, role FROM users WHERE manager_email = ?', [req.user.email]);
+        }
         res.json(rows);
     } catch (err) {
         logAudit(req.user.email, 'USER_LIST_VIEW_FAILURE', `Error viewing user list: ${err.message}`);
@@ -1282,7 +1327,32 @@ app.put('/api/compliments/:id/comment', authenticateToken, [
     }
 });
 
-// 11. User Management (Admin Only)
+// 11. User Management & Directory
+app.get('/api/directory', authenticateToken, async (req, res) => {
+    try {
+        // Public directory info: Name, Email, Role, Team, Avatar
+        // We mask phone numbers for everyone except admins/managers viewing their own team
+        const rows = await db.all('SELECT email, name, role, team, avatar, phone, manager_email FROM users');
+        
+        const safeRows = rows.map(u => {
+            const isAuthorized = req.user.role === 'admin' || u.manager_email === req.user.email || u.email === req.user.email;
+            return {
+                email: u.email,
+                name: u.name,
+                role: u.role,
+                team: u.team,
+                avatar: u.avatar,
+                phone: isAuthorized ? u.phone : (u.phone ? '***-***-****' : null) // Mask phone if not authorized
+            };
+        });
+        
+        res.json(safeRows);
+    } catch (err) {
+        logAudit(req.user.email, 'DIRECTORY_VIEW_FAILURE', `Error viewing directory: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
 app.get('/api/admin/users', authenticateToken, isAdmin, async (req, res) => {
     try {
         const rows = await db.all('SELECT email, name, role, team, annual_balance, sick_balance, annual_used, sick_used, phone FROM users');
