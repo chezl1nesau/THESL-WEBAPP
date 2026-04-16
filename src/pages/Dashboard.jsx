@@ -249,38 +249,30 @@ function EmployeeDashboard({ user, token }) {
                     <div className="card-header">
                         <h3 className="card-title">Recent Activity</h3>
                     </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Action</th>
-                                <th>Date</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                <tr>
-                                    <td colSpan="3" style={{textAlign: 'center', padding: '2rem', color: 'var(--text-light)'}}>Loading...</td>
-                                </tr>
-                            ) : recentActivity.length === 0 ? (
-                                <tr>
-                                    <td colSpan="3" style={{textAlign: 'center', padding: '2rem', color: 'var(--text-light)'}}>No recent activity</td>
-                                </tr>
-                            ) : (
-                                recentActivity.map((req, i) => (
-                                    <tr key={i}>
-                                        <td>{req.title || req.type}</td>
-                                        <td>{req.date}</td>
-                                        <td>
-                                            <span className={`badge badge-${req.status?.toLowerCase() === 'pending' ? 'warning' : req.status?.toLowerCase() === 'resolved' || req.status === 'success' || req.status === 'Approved' ? 'success' : 'danger'}`}>
-                                                {req.status}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                    {loading ? (
+                        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-light)' }}>Loading...</div>
+                    ) : recentActivity.length === 0 ? (
+                        <div className="empty-state">No recent activity</div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            {recentActivity.map((req, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border)', borderRadius: '10px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                        <div style={{ width: 36, height: 36, borderRadius: '8px', background: 'rgba(96,165,250,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <FileClock size={16} color="#60a5fa" />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{req.title || req.type}</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>{req.date}</div>
+                                        </div>
+                                    </div>
+                                    <span className={`badge badge-${req.status?.toLowerCase() === 'pending' ? 'warning' : req.status?.toLowerCase() === 'resolved' || req.status === 'success' || req.status === 'Approved' ? 'success' : 'danger'}`}>
+                                        {req.status}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         </>
@@ -439,29 +431,28 @@ export function ManagementDashboard({ token }) {
                     {pending.length === 0 ? (
                         <div className="empty-state">No pending approvals at this time.</div>
                     ) : (
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Employee</th>
-                                    <th>Type</th>
-                                    <th>Date</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {pending.map(item => (
-                                    <tr key={item.id}>
-                                        <td>{item.name}</td>
-                                        <td><span className="badge badge-primary">{item.type}</span></td>
-                                        <td>{item.date}</td>
-                                        <td>
-                                            <button className="btn btn-success" style={{marginRight: '0.5rem'}} onClick={() => handleAction(item.id, 'Approve')}>Approve</button>
-                                            <button className="btn btn-danger" onClick={() => handleAction(item.id, 'Reject')}>Reject</button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            {pending.map(item => (
+                                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', padding: '1rem 1.25rem', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border)', borderRadius: '10px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 200 }}>
+                                        <div style={{ width: 38, height: 38, borderRadius: '8px', background: 'rgba(96,165,250,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <ShieldCheck size={18} color="#60a5fa" />
+                                        </div>
+                                        <div>
+                                            <h4 style={{ margin: 0, fontSize: '0.95rem' }}>{item.name}</h4>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-light)', marginTop: '0.2rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                <span className="badge badge-primary" style={{ padding: '0.15rem 0.4rem', fontSize: '0.65rem' }}>{item.type}</span>
+                                                {item.date}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <button className="btn btn-primary" onClick={() => handleAction(item.id, 'Approve')} style={{ background: '#10b981', borderColor: '#10b981', padding: '0.4rem 1rem', fontSize: '0.85rem' }}>Approve</button>
+                                        <button className="btn btn-ghost" onClick={() => handleAction(item.id, 'Reject')} style={{ color: '#ef4444', border: '1px solid #ef4444', padding: '0.4rem 1rem', fontSize: '0.85rem' }}>Reject</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     )}
                 </div>
             </div>
