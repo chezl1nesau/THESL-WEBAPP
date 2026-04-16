@@ -706,8 +706,22 @@ app.post('/api/requests', authenticateToken, [
 // 5. Annual Leave
 app.get('/api/leave/annual', authenticateToken, async (req, res) => {
     try {
-        const rows = await db.all('SELECT * FROM annual_leave ORDER BY id DESC');
-        // Map from lowercase DB columns to camelCase expected by the UI
+        let rows;
+        if (req.user.role === 'admin') {
+            rows = await db.all('SELECT * FROM annual_leave ORDER BY id DESC');
+        } else if (req.user.role === 'manager') {
+            // Managers see their own and their direct reports' annual leave
+            rows = await db.all(`
+                SELECT a.* FROM annual_leave a
+                JOIN users u ON a.user_email = u.email
+                WHERE u.manager_email = ? OR a.user_email = ?
+                ORDER BY a.id DESC
+            `, [req.user.email, req.user.email]);
+        } else {
+            // Employees only see their own
+            rows = await db.all('SELECT * FROM annual_leave WHERE user_email = ? ORDER BY id DESC', [req.user.email]);
+        }
+        
         const mappedRows = rows.map(r => ({
             ...r,
             startDate: r.startdate || r.startDate,
@@ -716,7 +730,7 @@ app.get('/api/leave/annual', authenticateToken, async (req, res) => {
         }));
         res.json(mappedRows);
     } catch (err) {
-        logAudit(req.user?.email || 'public', 'ANNUAL_LEAVE_VIEW_FAILURE', `Error viewing annual leave: ${err.message}`);
+        logAudit(req.user?.email || 'unknown', 'ANNUAL_LEAVE_VIEW_FAILURE', `Error viewing annual leave: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
     }
 });
@@ -772,14 +786,28 @@ app.post('/api/leave/annual', authenticateToken, [
 // 6. Sick Leave
 app.get('/api/leave/sick', authenticateToken, async (req, res) => {
     try {
-        const rows = await db.all('SELECT * FROM sick_leave ORDER BY id DESC');
+        let rows;
+        if (req.user.role === 'admin') {
+            rows = await db.all('SELECT * FROM sick_leave ORDER BY id DESC');
+        } else if (req.user.role === 'manager') {
+            // Managers see their own and their direct reports' sick leave
+            rows = await db.all(`
+                SELECT s.* FROM sick_leave s
+                JOIN users u ON s.user_email = u.email
+                WHERE u.manager_email = ? OR s.user_email = ?
+                ORDER BY s.id DESC
+            `, [req.user.email, req.user.email]);
+        } else {
+            // Employees only see their own
+            rows = await db.all('SELECT * FROM sick_leave WHERE user_email = ? ORDER BY id DESC', [req.user.email]);
+        }
         const mappedRows = rows.map(r => ({
             ...r,
             fileName: r.filename || r.fileName
         }));
         res.json(mappedRows);
     } catch (err) {
-        logAudit(req.user?.email || 'public', 'SICK_LEAVE_VIEW_FAILURE', `Error viewing sick leave: ${err.message}`);
+        logAudit(req.user?.email || 'unknown', 'SICK_LEAVE_VIEW_FAILURE', `Error viewing sick leave: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
     }
 });
