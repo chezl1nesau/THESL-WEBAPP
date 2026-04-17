@@ -20,13 +20,14 @@ import {
     X,
     BookOpen,
     Fingerprint,
-    BarChart3
+    Activity
 } from 'lucide-react';
 
 export default function Sidebar({ user, onLogout, isOpen, onToggle }) {
     const navItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { id: 'announcements', label: 'Announcements', icon: Megaphone, path: '/announcements' },
+        { id: 'analytics', label: 'Analytics', icon: Activity, path: '/analytics' },
         { id: 'documents', label: 'Documents', icon: Folder, path: '/documents' },
         { id: 'calendar', label: 'Calendar', icon: Calendar, path: '/calendar' },
         { id: 'annual-leave', label: 'Annual Leave', icon: Palmtree, path: '/annual-leave' },
@@ -34,7 +35,6 @@ export default function Sidebar({ user, onLogout, isOpen, onToggle }) {
         { id: 'lateness', label: 'Lateness', icon: Clock, path: '/lateness' },
         { id: 'requests', label: 'Requests', icon: FileClock, path: '/requests' },
         { id: 'performance', label: 'Performance', icon: TrendingUp, path: '/performance' },
-        { id: 'analytics', label: 'Analytics', icon: BarChart3, path: '/analytics' },
         { id: 'compliments', label: 'Compliments', icon: Award, path: '/compliments' },
         { id: 'notifications', label: 'Notifications', icon: Bell, path: '/notifications' },
         { id: 'profile', label: 'Profile', icon: User, path: '/profile' },

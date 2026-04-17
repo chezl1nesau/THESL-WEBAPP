@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import AnimatedPage, { Skeleton } from '../components/AnimatedPage';
 import { api } from '../utils/api';
 import { DEMO_ANNOUNCEMENTS } from '../data/mockData';
@@ -272,13 +273,18 @@ function EmployeeDashboard({ user, token }) {
 
     return (
         <>
-            <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1.5rem' }}>
-                <div>
-                    <h1>Welcome back, {user.name.split(' ')[0]}</h1>
-                    <p>Here's your overview for today</p>
-                </div>
-                <div style={{ width: '100%', maxWidth: '300px' }}>
-                    <ProfileStrength user={user} />
+            <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flex: 1, gap: '2rem' }}>
+                    <div>
+                        <h1>Welcome back, {user.name.split(' ')[0]}</h1>
+                        <p>Here's your overview for today</p>
+                        <Link to="/analytics" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', fontSize: '0.85rem', padding: '0.5rem 1.25rem' }}>
+                            <Activity size={16} /> View Company Analytics
+                        </Link>
+                    </div>
+                    <div style={{ width: '100%', maxWidth: '300px' }}>
+                        <ProfileStrength user={user} />
+                    </div>
                 </div>
             </div>
 
@@ -438,9 +444,14 @@ export function ManagementDashboard({ token }) {
 
     return (
         <>
-            <div className="page-header">
-                <h1>Management Dashboard</h1>
-                <p>Manage employees and performance recognitions</p>
+            <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                    <h1>Management Dashboard</h1>
+                    <p>Manage employees and performance recognitions</p>
+                </div>
+                <Link to="/analytics" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--silver-gradient)', color: '#05111d' }}>
+                    <Activity size={18} /> View Live Analytics
+                </Link>
             </div>
 
             {error && (
