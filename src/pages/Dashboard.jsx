@@ -278,9 +278,6 @@ function EmployeeDashboard({ user, token }) {
                     <div>
                         <h1>Welcome back, {user.name.split(' ')[0]}</h1>
                         <p>Here's your overview for today</p>
-                        <Link to="/analytics" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', fontSize: '0.85rem', padding: '0.5rem 1.25rem' }}>
-                            <Activity size={16} /> View Company Analytics
-                        </Link>
                     </div>
                     <div style={{ width: '100%', maxWidth: '300px' }}>
                         <ProfileStrength user={user} />

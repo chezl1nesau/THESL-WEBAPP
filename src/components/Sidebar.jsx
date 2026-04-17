@@ -27,7 +27,6 @@ export default function Sidebar({ user, onLogout, isOpen, onToggle }) {
     const navItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { id: 'announcements', label: 'Announcements', icon: Megaphone, path: '/announcements' },
-        { id: 'analytics', label: 'Analytics', icon: Activity, path: '/analytics' },
         { id: 'documents', label: 'Documents', icon: Folder, path: '/documents' },
         { id: 'calendar', label: 'Calendar', icon: Calendar, path: '/calendar' },
         { id: 'annual-leave', label: 'Annual Leave', icon: Palmtree, path: '/annual-leave' },
@@ -41,6 +40,7 @@ export default function Sidebar({ user, onLogout, isOpen, onToggle }) {
     ];
 
     if (user.role === 'admin' || user.role === 'manager') {
+        navItems.splice(2, 0, { id: 'analytics', label: 'Analytics', icon: Activity, path: '/analytics' });
         navItems.push({ id: 'admin', label: 'Management', icon: ShieldCheck, path: '/admin' });
     }
     if (user.role === 'admin') {
