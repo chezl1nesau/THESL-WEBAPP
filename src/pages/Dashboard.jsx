@@ -124,11 +124,94 @@ function CompanyCalendar({ token }) {
     );
 }
 
+function ProfileStrength({ user }) {
+    let score = 0;
+    if (user.name) score += 20;
+    if (user.email) score += 20;
+    if (user.phone) score += 20;
+    if (user.avatar) score += 20;
+    if (user.team) score += 20;
+
+    return (
+        <div className="card" style={{ marginBottom: '1.5rem', background: 'var(--silver-gradient)', border: 'none' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <h4 style={{ margin: 0, color: '#050b16', fontSize: '0.95rem', fontWeight: '800' }}>Profile Completeness</h4>
+                <span style={{ color: '#050b16', fontWeight: '900', fontSize: '1rem' }}>{score}%</span>
+            </div>
+            <div style={{ width: '100%', height: '10px', background: 'rgba(5,11,22,0.1)', borderRadius: '20px', overflow: 'hidden', border: '1px solid rgba(5,11,22,0.05)' }}>
+                <div style={{ width: `${score}%`, height: '100%', background: '#050b16', borderRadius: 'inherit', transition: 'width 1s ease-out' }}></div>
+            </div>
+            <p style={{ margin: '0.75rem 0 0', fontSize: '0.75rem', color: 'rgba(5,11,22,0.7)', fontWeight: '600' }}>
+                {score < 100 ? 'Add your phone number and avatar to reach 100%' : 'Your profile is fully optimized!'}
+            </p>
+        </div>
+    );
+}
+
+function MilestoneBadges({ lateness, compliments, kpis }) {
+    const badges = [
+        { 
+            id: 'attendance', 
+            label: 'Early Bird', 
+            desc: 'Zero lateness this month', 
+            icon: Clock, 
+            active: lateness === 0,
+            color: '#fbbf24'
+        },
+        { 
+            id: 'recognition', 
+            label: 'Team Star', 
+            desc: 'Received a recognition', 
+            icon: Activity, 
+            active: compliments && compliments.length > 0,
+            color: '#bff368'
+        },
+        { 
+            id: 'performance', 
+            label: 'Overachiever', 
+            desc: 'KPI targets met', 
+            icon: ShieldCheck, 
+            active: kpis && kpis.length > 0,
+            color: '#60a5fa'
+        }
+    ];
+
+    return (
+        <div className="card">
+            <div className="card-header">
+                <h3 className="card-title">Milestones & Badges</h3>
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                {badges.map(badge => (
+                    <div key={badge.id} style={{ 
+                        flex: '1 1 140px', padding: '1.25rem 1rem', borderRadius: '12px', 
+                        background: badge.active ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.01)', 
+                        border: '1px solid var(--border)', textAlign: 'center',
+                        position: 'relative', overflow: 'hidden', opacity: badge.active ? 1 : 0.4
+                    }}>
+                        {badge.active && <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px', background: badge.color }}></div>}
+                        <div style={{ 
+                            width: 48, height: 48, borderRadius: '50%', background: `rgba(${badge.active ? '191,243,104' : '255,255,255'}, 0.1)`, 
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' 
+                        }}>
+                            <badge.icon size={24} color={badge.active ? badge.color : 'var(--text-light)'} />
+                        </div>
+                        <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: '0.25rem' }}>{badge.label}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-light)' }}>{badge.active ? 'Earned' : 'Locked'}</div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function EmployeeDashboard({ user, token }) {
     const [balances, setBalances] = useState({ annual_balance: 0, sick_balance: 0 });
     const [latenessCount, setLatenessCount] = useState(0);
     const [openRequestsCount, setOpenRequestsCount] = useState(0);
     const [recentActivity, setRecentActivity] = useState([]);
+    const [compliments, setCompliments] = useState([]);
+    const [kpiCount, setKpiCount] = useState(0);
     const [loading, setLoading] = useState(true);
     
     useEffect(() => {
@@ -136,23 +219,25 @@ function EmployeeDashboard({ user, token }) {
         
         const fetchDashboardData = async () => {
             try {
-                const [balRes, latRes, reqRes] = await Promise.all([
+                const [balRes, latRes, reqRes, compRes, docRes] = await Promise.all([
                     api.get(`/api/user/balances?email=${user.email}`, token),
                     api.get('/api/lateness', token),
-                    api.get('/api/requests', token)
+                    api.get('/api/requests', token),
+                    api.get('/api/compliments', token),
+                    api.get('/api/documents', token)
                 ]);
                 
                 const balData = await balRes.json();
                 const latData = await latRes.json();
                 const reqData = await reqRes.json();
+                const compData = await compRes.json();
+                const docData = await docRes.json();
                 
                 setBalances(balData);
                 
                 // Process Lateness
                 if (Array.isArray(latData)) {
-                    // Filter just this user's lateness
                     const myLate = latData.filter(L => L.user_email === user.email);
-                    // Filter for this month
                     const currentMonth = new Date().getMonth();
                     const thisMonthLate = myLate.filter(L => new Date(L.date).getMonth() === currentMonth);
                     setLatenessCount(thisMonthLate.length);
@@ -160,12 +245,21 @@ function EmployeeDashboard({ user, token }) {
                 
                 // Process Requests & Activity
                 if (Array.isArray(reqData)) {
-                    // Open = Pending
                     const pending = reqData.filter(r => r.status?.toLowerCase() === 'pending');
                     setOpenRequestsCount(pending.length);
-                    // Recent Activity
                     setRecentActivity(reqData.slice(0, 3));
                 }
+
+                // Process Compliments (for badges)
+                if (Array.isArray(compData)) {
+                    setCompliments(compData.filter(c => c.recipient_email === user.email));
+                }
+
+                // Process KPIs (for badges)
+                if (Array.isArray(docData)) {
+                    setKpiCount(docData.filter(d => d.title.includes('[KPI]')).length);
+                }
+
             } catch (err) {
                 console.error(err);
             } finally {
@@ -178,9 +272,14 @@ function EmployeeDashboard({ user, token }) {
 
     return (
         <>
-            <div className="page-header">
-                <h1>Welcome back, {user.name.split(' ')[0]}</h1>
-                <p>Here's your overview for today</p>
+            <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1.5rem' }}>
+                <div>
+                    <h1>Welcome back, {user.name.split(' ')[0]}</h1>
+                    <p>Here's your overview for today</p>
+                </div>
+                <div style={{ width: '100%', maxWidth: '300px' }}>
+                    <ProfileStrength user={user} />
+                </div>
             </div>
 
             <div className="stats-grid">
@@ -274,6 +373,10 @@ function EmployeeDashboard({ user, token }) {
                         </div>
                     )}
                 </div>
+            </div>
+
+            <div style={{ marginTop: '1.5rem' }}>
+                <MilestoneBadges lateness={latenessCount} compliments={compliments} kpis={kpiCount} />
             </div>
         </>
     );

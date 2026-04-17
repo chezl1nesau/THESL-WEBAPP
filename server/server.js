@@ -17,6 +17,7 @@ import cookieParser from 'cookie-parser';
 import speakeasy from 'speakeasy';
 import qrcode from 'qrcode';
 import nodemailer from 'nodemailer';
+import { sendEmail, sendLeaveNotification, sendKpiNotification, sendDailyDigest } from './utils/emailService.js';
 import { setupDb } from './db.js';
 
 const app = express();
@@ -962,6 +963,12 @@ app.post('/api/admin/action', authenticateToken, isManager, [
                 }
             }
             await createNotification(pending.user_email, 'Leave Approved ✅', `Your ${pending.type} leave has been approved.`, 'success');
+            
+            // Send Email Notification
+            const userObj = await db.get('SELECT email, name FROM users WHERE email = ?', [pending.user_email]);
+            if (userObj) {
+                await sendLeaveNotification(userObj, pending.type, 'Approved', pending.details || pending.date);
+            }
             logAudit(req.user.email, 'APPROVAL_ACTION', `Approved ${pending.type} request for ${pending.user_email} (ID: ${pending.reference_id})`);
         } else if (action === 'Reject') {
             if (pending.type === 'Annual') {
@@ -970,6 +977,12 @@ app.post('/api/admin/action', authenticateToken, isManager, [
                 await db.run('UPDATE sick_leave SET status = ? WHERE id = ?', ['Rejected', pending.reference_id]);
             }
             await createNotification(pending.user_email, 'Leave Rejected ❌', `Your ${pending.type} leave has been rejected.`, 'error');
+            
+            // Send Email Notification
+            const userObj = await db.get('SELECT email, name FROM users WHERE email = ?', [pending.user_email]);
+            if (userObj) {
+                await sendLeaveNotification(userObj, pending.type, 'Rejected', pending.details || pending.date);
+            }
             logAudit(req.user.email, 'APPROVAL_ACTION', `Rejected ${pending.type} request for ${pending.user_email} (ID: ${pending.reference_id})`);
         }
         
@@ -979,6 +992,39 @@ app.post('/api/admin/action', authenticateToken, isManager, [
     } catch (err) {
         logAudit(req.user.email, 'APPROVAL_ACTION_FAILURE', `Error processing approval action for ID ${id}: ${err.message}`);
         res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+app.post('/api/admin/daily-digest', authenticateToken, isManager, async (req, res) => {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        const managers = await db.all('SELECT email, name FROM users WHERE role IN (?, ?)', ['manager', 'admin']);
+        
+        for (const manager of managers) {
+            // Find who is on leave today for this manager
+            const onLeave = await db.all(`
+                SELECT u.name, 'Annual' as type FROM annual_leave a
+                JOIN users u ON a.user_email = u.email
+                WHERE u.manager_email = ? AND status = 'Approved' AND ? BETWEEN startdate AND enddate
+                UNION
+                SELECT u.name, 'Sick' as type FROM sick_leave s
+                JOIN users u ON s.user_email = u.email
+                WHERE u.manager_email = ? AND status = 'Approved' AND date = ?
+            `, [manager.email, today, manager.email, today]);
+
+            // Find pending approvals for this manager
+            const pending = await db.all('SELECT name, type, duration FROM pending_approvals WHERE manager_email = ?', [manager.email]);
+
+            if (onLeave.length > 0 || pending.length > 0) {
+                await sendDailyDigest(manager, onLeave, pending);
+            }
+        }
+
+        logAudit(req.user.email, 'DAILY_DIGEST_TRIGGERED', `Manual daily digest sent by ${req.user.email}`);
+        res.json({ success: true, message: 'Daily digests sent to all relevant managers' });
+    } catch (err) {
+        console.error('Digest Error:', err);
+        res.status(500).json({ success: false, message: 'Error sending digests' });
     }
 });
 
@@ -1142,6 +1188,16 @@ app.post('/api/documents/upload', authenticateToken, (req, res) => {
                 'INSERT INTO documents (title, filename, size, uploaddate, category, uploaded_by, original_name, user_email, is_company_doc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [title, filename, size, date, category, uploaded_by, originalname, user_email, is_company_doc]
             );
+
+            // Trigger KPI email if it's a KPI
+            if (title.toUpperCase().includes('[KPI]')) {
+                const allUsers = await db.all('SELECT email, name FROM users');
+                const targetUser = allUsers.find(u => title.toLowerCase().includes(u.name.toLowerCase()) || title.toLowerCase().includes(u.email.toLowerCase()));
+                if (targetUser) {
+                    await sendKpiNotification(targetUser, title.replace('[KPI] ', ''));
+                }
+            }
+
             logAudit(req.user.email, 'DOCUMENT_UPLOAD', `Uploaded document: ${title} (${filename}) [company=${is_company_doc}]`);
             res.json({ success: true });
         } catch (err) {
