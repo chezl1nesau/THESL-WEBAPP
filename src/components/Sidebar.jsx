@@ -19,7 +19,8 @@ import {
     Menu,
     X,
     BookOpen,
-    Fingerprint
+    Fingerprint,
+    BarChart3
 } from 'lucide-react';
 
 export default function Sidebar({ user, onLogout, isOpen, onToggle }) {
@@ -33,6 +34,7 @@ export default function Sidebar({ user, onLogout, isOpen, onToggle }) {
         { id: 'lateness', label: 'Lateness', icon: Clock, path: '/lateness' },
         { id: 'requests', label: 'Requests', icon: FileClock, path: '/requests' },
         { id: 'performance', label: 'Performance', icon: TrendingUp, path: '/performance' },
+        { id: 'analytics', label: 'Analytics', icon: BarChart3, path: '/analytics' },
         { id: 'compliments', label: 'Compliments', icon: Award, path: '/compliments' },
         { id: 'notifications', label: 'Notifications', icon: Bell, path: '/notifications' },
         { id: 'profile', label: 'Profile', icon: User, path: '/profile' },
