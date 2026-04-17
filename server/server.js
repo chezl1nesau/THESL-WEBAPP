@@ -180,6 +180,14 @@ const SPECIAL_AUTHORIZED_EMAILS = [
 
 const isSuperAuthorized = (email) => SPECIAL_AUTHORIZED_EMAILS.includes(email ? email.toLowerCase() : '');
 
+const isAuthorizedAdmin = (req, res, next) => {
+    if (req.user && (req.user.role === 'admin' || isSuperAuthorized(req.user.email))) {
+        next();
+    } else {
+        res.status(403).json({ success: false, message: 'Forbidden: Elevated permissions required' });
+    }
+};
+
 const logAudit = (email, action, details) => {
     if (!db) return;
     db.run('INSERT INTO audit_logs (email, action, details) VALUES (?, ?, ?)', [email, action, details], (err) => {
@@ -655,7 +663,7 @@ app.post('/api/announcements', authenticateToken, isAdmin, [
     }
 });
 
-app.delete('/api/announcements/:id', authenticateToken, isAdmin, async (req, res) => {
+app.delete('/api/announcements/:id', authenticateToken, isAuthorizedAdmin, async (req, res) => {
     const { id } = req.params;
     try {
         await db.run('DELETE FROM announcements WHERE id = ?', [id]);
@@ -797,6 +805,54 @@ app.post('/api/leave/annual', authenticateToken, [
 });
 
 // 6. Sick Leave
+app.delete('/api/leave/annual/:id', authenticateToken, isAuthorizedAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const leave = await db.get('SELECT * FROM annual_leave WHERE id = ?', [id]);
+        if (!leave) return res.status(404).json({ success: false, message: 'Leave record not found' });
+
+        // If it was already approved, refund the balance
+        if (leave.status === 'Approved') {
+            const user = await db.get('SELECT annual_balance, annual_used FROM users WHERE email = ?', [leave.user_email]);
+            if (user) {
+                await db.run('UPDATE users SET annual_balance = ?, annual_used = ? WHERE email = ?', 
+                    [user.annual_balance + leave.duration, user.annual_used - leave.duration, leave.user_email]);
+            }
+        }
+
+        await db.run('DELETE FROM annual_leave WHERE id = ?', [id]);
+        logAudit(req.user.email, 'ANNUAL_LEAVE_DELETE', `Deleted ${leave.status} annual leave for ${leave.user_email} (ID: ${id})`);
+        res.json({ success: true, message: 'Leave record removed and balance refunded' });
+    } catch (err) {
+        logAudit(req.user.email, 'ANNUAL_LEAVE_DELETE_FAILURE', `Error deleting leave ID ${id}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+app.delete('/api/leave/sick/:id', authenticateToken, isAuthorizedAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const leave = await db.get('SELECT * FROM sick_leave WHERE id = ?', [id]);
+        if (!leave) return res.status(404).json({ success: false, message: 'Leave record not found' });
+
+        // Refund balance if approved
+        if (leave.status === 'Approved') {
+            const user = await db.get('SELECT sick_balance, sick_used FROM users WHERE email = ?', [leave.user_email]);
+            if (user) {
+                await db.run('UPDATE users SET sick_balance = ?, sick_used = ? WHERE email = ?', 
+                    [user.sick_balance + (leave.duration || 0), user.sick_used - (leave.duration || 0), leave.user_email]);
+            }
+        }
+
+        await db.run('DELETE FROM sick_leave WHERE id = ?', [id]);
+        logAudit(req.user.email, 'SICK_LEAVE_DELETE', `Deleted ${leave.status} sick leave for ${leave.user_email} (ID: ${id})`);
+        res.json({ success: true, message: 'Leave record removed' });
+    } catch (err) {
+        logAudit(req.user.email, 'SICK_LEAVE_DELETE_FAILURE', `Error deleting leave ID ${id}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
 app.get('/api/leave/sick', authenticateToken, async (req, res) => {
     try {
         let rows;

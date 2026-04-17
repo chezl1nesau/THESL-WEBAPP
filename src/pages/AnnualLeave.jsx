@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 import { 
     CalendarDays, Sun, Clock, CheckCircle, AlertCircle, 
-    Calendar, Loader2, Info, Plus, CalendarRange, CheckCircle2
+    Calendar, Loader2, Info, Plus, CalendarRange, CheckCircle2, Trash2
 } from 'lucide-react';
 
 export default function AnnualLeave({ user, token }) {
@@ -13,11 +13,10 @@ export default function AnnualLeave({ user, token }) {
     const [loadError, setLoadError] = useState('');
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    
-    // Form state
-    const [startDate, setStartDate] = useState('');
-    const [endDate, setEndDate] = useState('');
-    const [reason, setReason] = useState('');
+
+    const SPECIAL_EMAILS = ['afnaan@thesl.co.za', 'chezlin@thesl.co.za', 'zaid@thesl.co.za'];
+    const isSuper = SPECIAL_EMAILS.includes(user.email.toLowerCase());
+    const canDelete = user.role === 'admin' || isSuper;
 
     useEffect(() => {
         setLoadError('');
@@ -28,7 +27,8 @@ export default function AnnualLeave({ user, token }) {
             api.get(`/api/user/balances?email=${user.email}`, token).then(res => res.json())
         ])
         .then(([leaveData, balanceData]) => {
-            setRequests(leaveData.filter(r => r.user_email === user.email));
+            // If admin/manager, we already get filtered team data from backend, no need to filter further except for UI clarity
+            setRequests(leaveData);
             setBalances(balanceData);
         })
         .catch(err => {
@@ -37,6 +37,24 @@ export default function AnnualLeave({ user, token }) {
         })
         .finally(() => setLoading(false));
     }, [user.email, token]);
+
+    const handleDelete = async (id) => {
+        if (!window.confirm('Are you sure you want to remove this leave record? This will also refund the user\'s balance.')) return;
+        
+        try {
+            const res = await api.delete(`/api/leave/annual/${id}`, token);
+            const data = await res.json();
+            if (data.success) {
+                setRequests(requests.filter(r => r.id !== id));
+                setStatus({ type: 'success', message: 'Leave removed and balance refunded. ✅' });
+                setTimeout(() => setStatus({ type: '', message: '' }), 3000);
+            }
+        } catch (err) {
+            console.error('Delete failed', err);
+            setStatus({ type: 'error', message: 'Failed to delete record.' });
+        }
+    };
+
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -239,14 +257,26 @@ export default function AnnualLeave({ user, token }) {
                                                 </div>
                                             </div>
                                         </div>
-                                        <div style={{ 
-                                            display: 'flex', alignItems: 'center', gap: '0.4rem', 
-                                            padding: '0.35rem 0.65rem', borderRadius: '20px', 
-                                            background: statusInfo.bg, color: statusInfo.color, 
-                                            fontSize: '0.75rem', fontWeight: 600 
-                                        }}>
-                                            <StatusIcon size={14} />
-                                            {req.status}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                            <div style={{ 
+                                                display: 'flex', alignItems: 'center', gap: '0.4rem', 
+                                                padding: '0.35rem 0.65rem', borderRadius: '20px', 
+                                                background: statusInfo.bg, color: statusInfo.color, 
+                                                fontSize: '0.75rem', fontWeight: 600 
+                                            }}>
+                                                <StatusIcon size={14} />
+                                                {req.status}
+                                            </div>
+                                            {canDelete && (
+                                                <button 
+                                                    onClick={() => handleDelete(req.id)}
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', opacity: 0.6, color: '#ef4444' }}
+                                                    className="delete-btn"
+                                                    title="Delete Record"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 );

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { api } from '../utils/api';
 import { 
     Thermometer, Upload, Clock, CheckCircle, AlertCircle, FileText, 
-    Calendar, Loader2, Info, Plus, Image as ImageIcon, CheckCircle2, ShieldAlert
+    Calendar, Loader2, Info, Plus, Image as ImageIcon, CheckCircle2, ShieldAlert, Trash2
 } from 'lucide-react';
 
 export default function SickLeave({ user, token }) {
@@ -13,6 +13,10 @@ export default function SickLeave({ user, token }) {
     const [status, setStatus] = useState({ type: '', message: '' });
     const fileInputRef = useRef(null);
 
+    const SPECIAL_EMAILS = ['afnaan@thesl.co.za', 'chezlin@thesl.co.za', 'zaid@thesl.co.za'];
+    const isSuper = SPECIAL_EMAILS.includes(user.email.toLowerCase());
+    const canDelete = user.role === 'admin' || isSuper;
+
     useEffect(() => {
         setLoading(true);
         Promise.all([
@@ -20,7 +24,7 @@ export default function SickLeave({ user, token }) {
             api.get(`/api/user/balances?email=${user.email}`, token).then(res => res.json())
         ])
         .then(([leaveData, balanceData]) => {
-            setRequests(leaveData.filter(r => r.user_email === user.email));
+            setRequests(leaveData);
             setBalances(balanceData);
         })
         .catch(err => {
@@ -29,6 +33,24 @@ export default function SickLeave({ user, token }) {
         })
         .finally(() => setLoading(false));
     }, [user.email, token]);
+
+    const handleDelete = async (id) => {
+        if (!window.confirm('Are you sure you want to remove this leave record?')) return;
+        
+        try {
+            const res = await api.delete(`/api/leave/sick/${id}`, token);
+            const data = await res.json();
+            if (data.success) {
+                setRequests(requests.filter(r => r.id !== id));
+                setStatus({ type: 'success', message: 'Leave record removed. ✅' });
+                setTimeout(() => setStatus({ type: '', message: '' }), 3000);
+            }
+        } catch (err) {
+            console.error('Delete failed', err);
+            setStatus({ type: 'error', message: 'Failed to delete record.' });
+        }
+    };
+
 
     const postToApi = async (payload) => {
         try {
@@ -288,14 +310,25 @@ export default function SickLeave({ user, token }) {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div style={{ 
-                                                display: 'flex', alignItems: 'center', gap: '0.4rem', 
-                                                padding: '0.35rem 0.65rem', borderRadius: '20px', 
-                                                background: statusInfo.bg, color: statusInfo.color, 
-                                                fontSize: '0.75rem', fontWeight: 600 
-                                            }}>
-                                                <StatusIcon size={14} />
-                                                {req.status}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                <div style={{ 
+                                                    display: 'flex', alignItems: 'center', gap: '0.4rem', 
+                                                    padding: '0.35rem 0.65rem', borderRadius: '20px', 
+                                                    background: statusInfo.bg, color: statusInfo.color, 
+                                                    fontSize: '0.75rem', fontWeight: 600 
+                                                }}>
+                                                    <StatusIcon size={14} />
+                                                    {req.status}
+                                                </div>
+                                                {canDelete && (
+                                                    <button 
+                                                        onClick={() => handleDelete(req.id)}
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', opacity: 0.6, color: '#ef4444' }}
+                                                        title="Delete Record"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     );
