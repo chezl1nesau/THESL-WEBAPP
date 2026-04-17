@@ -655,6 +655,18 @@ app.post('/api/announcements', authenticateToken, isAdmin, [
     }
 });
 
+app.delete('/api/announcements/:id', authenticateToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.run('DELETE FROM announcements WHERE id = ?', [id]);
+        logAudit(req.user.email, 'ANNOUNCEMENT_DELETE', `Deleted announcement ID ${id}`);
+        res.json({ success: true, message: 'Announcement deleted' });
+    } catch (err) {
+        logAudit(req.user.email, 'ANNOUNCEMENT_DELETE_FAILURE', `Error deleting announcement ID ${id}: ${err.message}`);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
 // 4. Requests
 app.get('/api/requests', authenticateToken, async (req, res) => {
     try {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Newspaper, ScrollText, Calendar as CalendarIcon, Filter } from 'lucide-react';
+import { Bell, Newspaper, ScrollText, Calendar as CalendarIcon, Filter, Trash2 } from 'lucide-react';
 import { api } from '../utils/api';
 
 export default function Announcements({ token, user }) {
@@ -29,7 +29,26 @@ export default function Announcements({ token, user }) {
             });
     }, [token]);
 
+    const handleDelete = async (id) => {
+        if (!window.confirm('Are you sure you want to remove this announcement?')) return;
+        
+        try {
+            const res = await api.delete(`/api/announcements/${id}`, token);
+            const data = await res.json();
+            if (data.success) {
+                setAnnouncements(announcements.filter(a => a.id !== id));
+                setStatus({ type: 'success', message: 'Announcement removed ✅' });
+                setTimeout(() => setStatus({ type: '', message: '' }), 3000);
+            }
+        } catch (err) {
+            console.error('Delete failed', err);
+            setStatus({ type: 'error', message: 'Failed to delete' });
+        }
+    };
+
     const handleSubmit = async (e) => {
+// ... keep existing code
+
         e.preventDefault();
         setStatus({ type: 'info', message: 'Posting announcement...' });
         
@@ -148,9 +167,20 @@ export default function Announcements({ token, user }) {
                                 <div style={{ flex: 1 }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
                                         <h3 style={{ fontSize: '1.15rem', fontWeight: '700', color: 'white', margin: 0 }}>{announcement.title}</h3>
-                                        <span className={`badge badge-${announcement.type === 'event' ? 'primary' : 'warning'}`} style={{ fontSize: '0.65rem' }}>
-                                            {announcement.type}
-                                        </span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                            <span className={`badge badge-${announcement.type === 'event' ? 'primary' : 'warning'}`} style={{ fontSize: '0.65rem' }}>
+                                                {announcement.type}
+                                            </span>
+                                            {user?.role === 'admin' && (
+                                                <button 
+                                                    onClick={() => handleDelete(announcement.id)}
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', opacity: 0.6, color: '#ef4444' }}
+                                                    className="delete-btn"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.9375rem', lineHeight: '1.7', marginBottom: '1.25rem', maxWidth: '90%' }}>
                                         {announcement.content}
