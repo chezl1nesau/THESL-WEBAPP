@@ -1678,6 +1678,76 @@ async function createNotification(email, title, message, type = 'info', relatedI
         console.error('Notification creation failed', err);
     }
 }
+app.get('/api/admin/insights/:email', authenticateToken, isAuthorizedAdmin, async (req, res) => {
+    const { email } = req.params;
+    try {
+        const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // 1. Get Leave History (Annual & Sick)
+        const annualLeave = await db.all('SELECT * FROM annual_leave WHERE user_email = ? AND status = "approved" ORDER BY endDate DESC', [email]);
+        const sickLeave = await db.all('SELECT * FROM sick_leave WHERE user_email = ? AND status = "approved" ORDER BY date DESC', [email]);
+
+        // 2. Get Compliments
+        const compliments = await db.all('SELECT * FROM compliments WHERE recipient_email = ? AND status = "approved"', [email]);
+
+        // 3. Get Documents (specifically KPIs)
+        const documents = await db.all('SELECT * FROM documents WHERE user_email = ?', [email]);
+        const kpis = documents.filter(d => d.title.includes('[KPI]'));
+
+        // CALCULATE BURNOUT RISK
+        const lastLeave = annualLeave[0];
+        let burnoutRisk = 'Low';
+        let burnoutReason = 'Recent leave taken.';
+        
+        if (!lastLeave) {
+            burnoutRisk = 'High';
+            burnoutReason = 'No annual leave recorded in the system.';
+        } else {
+            const monthsSinceLeave = (new Date() - new Date(lastLeave.endDate)) / (1000 * 60 * 60 * 24 * 30.44);
+            if (monthsSinceLeave > 6) {
+                burnoutRisk = 'High';
+                burnoutReason = `Has not taken leave in ${Math.floor(monthsSinceLeave)} months.`;
+            } else if (monthsSinceLeave > 4) {
+                burnoutRisk = 'Medium';
+                burnoutReason = `Last leave was over 4 months ago.`;
+            }
+        }
+
+        // GENERATE "AI" SUMMARY (Rule-based for now, formatted for "AI" feel)
+        let summary = `${user.name} is a valued member of the ${user.team || 'team'}. `;
+        
+        if (compliments.length > 0) {
+            summary += `They have received ${compliments.length} professional recognitions, highlighting their positive impact. `;
+        } else {
+            summary += `They are consistently maintaining their operational responsibilities. `;
+        }
+
+        if (kpis.length > 0) {
+            summary += `With ${kpis.length} KPI documents on file, their performance tracking is active and up to date. `;
+        }
+
+        if (burnoutRisk === 'High') {
+            summary += `\n\nStrategic Recommendation: Due to the high burnout risk indicator, a wellness check-in or encouraging a block of leave is recommended to maintain long-term productivity.`;
+        }
+
+        res.json({
+            success: true,
+            insights: {
+                burnout: { risk: burnoutRisk, reason: burnoutReason },
+                performance: {
+                    totalAwards: compliments.length,
+                    latestAward: compliments[0]?.type || 'Standard Performance',
+                    kpiStatus: kpis.length > 0 ? 'Consistent' : 'Pending Review'
+                },
+                summary: summary
+            }
+        });
+    } catch (err) {
+        console.error('Insights error:', err);
+        res.status(500).json({ success: false, message: 'Failed to generate insights' });
+    }
+});
 
 // Catch-all handler for any request that doesn't match an API route
 if (fs.existsSync(distPath)) {

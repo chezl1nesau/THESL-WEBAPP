@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../utils/api';
+import { Sparkles, Brain, AlertTriangle, CheckCircle, TrendingUp } from 'lucide-react';
 
 export default function UserManagement({ token }) {
     const [users, setUsers] = useState([]);
@@ -17,6 +18,10 @@ export default function UserManagement({ token }) {
         team: ''
     });
     const [status, setStatus] = useState({ type: '', message: '' });
+    const [insights, setInsights] = useState(null);
+    const [loadingInsights, setLoadingInsights] = useState(false);
+    const [showInsightsModal, setShowInsightsModal] = useState(false);
+    const [targetUser, setTargetUser] = useState(null);
 
     const fetchUsers = useCallback(async () => {
         setLoading(true);
@@ -42,7 +47,7 @@ export default function UserManagement({ token }) {
         setFormData({
             email: user.email,
             name: user.name,
-            password: '', // Don't show password
+            password: '', 
             role: user.role,
             phone: user.phone || '',
             annual_balance: user.annual_balance,
@@ -126,6 +131,27 @@ export default function UserManagement({ token }) {
         }
     };
 
+    const handleViewInsights = async (user) => {
+        setTargetUser(user);
+        setShowInsightsModal(true);
+        setLoadingInsights(true);
+        setInsights(null);
+        try {
+            const res = await api.get(`/api/admin/insights/${user.email}`, token);
+            const data = await res.json();
+            if (data.success) {
+                setInsights(data.insights);
+            } else {
+                setStatus({ type: 'error', message: data.message });
+            }
+        } catch (err) {
+            console.error(err);
+            setStatus({ type: 'error', message: 'Failed to generate insights' });
+        } finally {
+            setLoadingInsights(false);
+        }
+    };
+
     return (
         <div className="user-management">
             <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -165,7 +191,7 @@ export default function UserManagement({ token }) {
                     </thead>
                     <tbody>
                         {loading ? (
-                            <tr><td colSpan="5" style={{ textAlign: 'center', padding: '2rem' }}>Loading users...</td></tr>
+                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '2rem' }}>Loading users...</td></tr>
                         ) : users.map(user => (
                             <tr key={user.email} style={{ borderBottom: '1px solid var(--border-light)' }}>
                                 <td style={{ padding: '1rem' }}>
@@ -189,8 +215,15 @@ export default function UserManagement({ token }) {
                                 <td style={{ padding: '1rem' }}>
                                     <span style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: 'rgba(191,243,104,0.1)', color: 'var(--accent)' }}>{user.team || '—'}</span>
                                 </td>
-                                <td style={{ padding: '1rem', textAlign: 'right' }}>
-                                    <button className="btn btn-secondary" style={{ marginRight: '0.5rem', padding: '0.25rem 0.75rem' }} onClick={() => handleEdit(user)}>Edit</button>
+                                <td style={{ padding: '1rem', textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                                    <button 
+                                        className="btn btn-secondary" 
+                                        style={{ background: 'var(--silver-gradient)', color: '#05111d', border: 'none', padding: '0.25rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }} 
+                                        onClick={() => handleViewInsights(user)}
+                                    >
+                                        <Sparkles size={14} /> Insights
+                                    </button>
+                                    <button className="btn btn-secondary" style={{ padding: '0.25rem 0.75rem' }} onClick={() => handleEdit(user)}>Edit</button>
                                     <button className="btn btn-outline" style={{ color: '#e02424', borderColor: '#f8d7da', padding: '0.25rem 0.75rem' }} onClick={() => handleDelete(user.email)}>Delete</button>
                                 </td>
                             </tr>
@@ -278,6 +311,86 @@ export default function UserManagement({ token }) {
                     </div>
                 </div>
             )}
+
+            {showInsightsModal && (
+                <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+                    <div className="card" style={{ width: '600px', background: 'var(--bg-card)', border: '1px solid var(--border)', padding: '2rem', position: 'relative', overflow: 'hidden' }}>
+                        <div style={{ position: 'absolute', top: '-100px', right: '-100px', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(191,243,104,0.05) 0%, transparent 70%)', zIndex: 0 }}></div>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem', position: 'relative', zIndex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <div style={{ width: 50, height: 50, borderRadius: '12px', background: 'var(--silver-gradient)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#05111d' }}>
+                                    <Brain size={28} />
+                                </div>
+                                <div>
+                                    <h2 style={{ margin: 0, fontSize: '1.5rem' }}>AI Employee Insights</h2>
+                                    <p style={{ margin: 0, color: 'var(--accent)', fontSize: '0.9rem', fontWeight: 600 }}>Analyzing {targetUser?.name}</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowInsightsModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-light)', cursor: 'pointer', fontSize: '1.5rem' }}>×</button>
+                        </div>
+
+                        {loadingInsights ? (
+                            <div style={{ padding: '4rem 0', textAlign: 'center' }}>
+                                <div className="spinner" style={{ border: '3px solid rgba(255,255,255,0.1)', borderTop: '3px solid var(--accent)', borderRadius: '50%', width: 40, height: 40, animation: 'spin 1s linear infinite', margin: '0 auto 1.5rem' }}></div>
+                                <p style={{ color: 'var(--text-light)' }}>Syncing performance data and leave history...</p>
+                            </div>
+                        ) : insights ? (
+                            <div style={{ position: 'relative', zIndex: 1 }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+                                    <div style={{ padding: '1.25rem', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', fontSize: '0.85rem', color: 'var(--text-light)' }}>
+                                            <AlertTriangle size={14} color={insights.burnout.risk === 'High' ? '#ef4444' : '#f59e0b'} />
+                                            Wellness Status
+                                        </div>
+                                        <div style={{ fontSize: '1.25rem', fontWeight: 800, color: insights.burnout.risk === 'High' ? '#ef4444' : insights.burnout.risk === 'Medium' ? '#f59e0b' : '#10b981' }}>
+                                            {insights.burnout.risk} Burnout Risk
+                                        </div>
+                                        <p style={{ margin: '0.5rem 0 0', fontSize: '0.75rem', color: 'var(--text-light)' }}>{insights.burnout.reason}</p>
+                                    </div>
+
+                                    <div style={{ padding: '1.25rem', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', fontSize: '0.85rem', color: 'var(--text-light)' }}>
+                                            <TrendingUp size={14} color="var(--accent)" />
+                                            Performance Pulse
+                                        </div>
+                                        <div style={{ fontSize: '1.25rem', fontWeight: 800 }}>
+                                            {insights.performance.totalAwards} Recognitions
+                                        </div>
+                                        <p style={{ margin: '0.5rem 0 0', fontSize: '0.75rem', color: 'var(--text-light)' }}>Latest: {insights.performance.latestAward}</p>
+                                    </div>
+                                </div>
+
+                                <div style={{ padding: '1.5rem', borderRadius: '12px', background: 'rgba(191,243,104,0.05)', border: '1px solid rgba(191,243,104,0.2)', marginBottom: '1.5rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', fontWeight: 800, fontSize: '0.9rem' }}>
+                                        <Sparkles size={16} className="text-accent" />
+                                        GENERATED SUMMARY
+                                    </div>
+                                    <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: 1.6, color: 'rgba(255,255,255,0.9)', whiteSpace: 'pre-wrap' }}>
+                                        {insights.summary}
+                                    </p>
+                                </div>
+
+                                <button 
+                                    className="btn btn-primary" 
+                                    style={{ width: '100%', padding: '1rem' }} 
+                                    onClick={() => setShowInsightsModal(false)}
+                                >
+                                    Dismiss Insights
+                                </button>
+                            </div>
+                        ) : (
+                            <div style={{ textAlign: 'center', padding: '2rem' }}>
+                                <p style={{ color: '#ef4444' }}>Error: Could not retrieve insights for this user.</p>
+                                <button className="btn btn-secondary" onClick={() => setShowInsightsModal(false)}>Close</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+            <style>{`
+                @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+            `}</style>
         </div>
     );
 }
